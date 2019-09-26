@@ -28,6 +28,23 @@ def _average(args):
             kwargs["path_basename"] = os.path.splitext(path)[0] + "_avg"
             average(locs, info, **kwargs)
 
+def _nanotron(args):
+    from glob import glob
+    from .io import load_locs, NoMetadataFileError
+    from picasso.gui import nanotron
+
+    kwargs = {"iterations": args.iterations, "oversampling": args.oversampling}
+    paths = glob(args.file)
+    if paths:
+        for path in paths:
+            print("Averaging {}".format(path))
+            try:
+                locs, info = load_locs(path)
+            except NoMetadataFileError:
+                continue
+            kwargs["path_basename"] = os.path.splitext(path)[0] + "_avg"
+            average(locs, info, **kwargs)
+
 
 def _hdf2visp(path, pixel_size):
     from glob import glob
@@ -1299,6 +1316,24 @@ def main():
         "simulate", help="simulate single molecule fluorescence data"
     )
 
+
+    # nanotron
+    nanotron_parser = subparsers.add_parser(
+        "nanotron", help="segmentation with deep learning"
+    )
+    nanotron_parser.add_argument(
+        "-m",
+        "--model",
+        nargs="?",
+        help="a model file for prediction",
+    )
+    #nanotron_parser.add_argument("-i", "--iterations", type=int, default=20)
+    nanotron_parser.add_argument(
+        "files",
+        nargs="?",
+        help="a localization file with grouped localizations",
+    )
+
     # average
     average_parser = subparsers.add_parser(
         "average", help="particle averaging"
@@ -1366,7 +1401,14 @@ def main():
             else:
                 from .gui import average
 
-                average.main()
+        elif args.command == "nanotron":
+            if args.files:
+                _nanotron(args)
+            else:
+                from .gui import nanotron
+
+                nanotron.main()
+
         elif args.command == "average3":
             from .gui import average3
 
