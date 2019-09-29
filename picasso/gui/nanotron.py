@@ -305,7 +305,7 @@ class Window(QtWidgets.QMainWindow):
         modelbox_grid.addWidget(self.model_0_btn)
         modelbox_grid.addWidget(self.model_1_btn)
         modelbox_grid.addWidget(self.model_2_btn)
-        modelbox_grid.addWidget(self.model_3_btn)
+        # modelbox_grid.addWidget(self.model_3_btn)
         modelbox_grid.addStretch(1)
 
         #Predict box
@@ -316,7 +316,7 @@ class Window(QtWidgets.QMainWindow):
 
         accuracy_box = QtWidgets.QGroupBox("Filter export")
         accuracy_grid = QtWidgets.QGridLayout(accuracy_box)
-        self.filter_accuracy_btn = QtWidgets.QCheckBox("Filter")
+        self.filter_accuracy_btn = QtWidgets.QCheckBox("Accuracy Filter")
         self.export_accuracy = QtWidgets.QDoubleSpinBox()
         self.export_accuracy.setDecimals(2)
         self.export_accuracy.setRange(0, 1)
