@@ -17,6 +17,7 @@ import matplotlib.pyplot as plt
 import numba
 import numpy as np
 import scipy
+from sklearn.externals import joblib
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from .. import io, lib, render
@@ -267,10 +268,6 @@ class Window(QtWidgets.QMainWindow):
         open_action.setShortcut(QtGui.QKeySequence.Open)
         open_action.triggered.connect(self.open)
         file_menu.addAction(open_action)
-        save_action = file_menu.addAction("Save")
-        save_action.setShortcut(QtGui.QKeySequence.Save)
-        save_action.triggered.connect(self.save)
-        file_menu.addAction(save_action)
 
         #Training menu #TODO
         # process_menu = menu_bar.addMenu("Training")
@@ -296,22 +293,29 @@ class Window(QtWidgets.QMainWindow):
         view_grid.addWidget(self.view,0,0)
 
         #Model box
-        model_box = QtWidgets.QGroupBox("Select Classes") #model box, select what origamis should be exported
+        model_box = QtWidgets.QGroupBox("Model")
         modelbox_grid = QtWidgets.QVBoxLayout(model_box)
-        self.model_0_btn = QtWidgets.QCheckBox("Digit 1")
-        self.model_1_btn = QtWidgets.QCheckBox("Digit 2")
-        self.model_2_btn = QtWidgets.QCheckBox("20 nm Grid")
-        # self.model_3_btn = QtWidgets.QCheckBox("4 Corner") #Todo
-        modelbox_grid.addWidget(self.model_0_btn)
-        modelbox_grid.addWidget(self.model_1_btn)
-        modelbox_grid.addWidget(self.model_2_btn)
-        # modelbox_grid.addWidget(self.model_3_btn)
-        modelbox_grid.addStretch(1)
+        self.model_load = QtWidgets.QPushButton("Load Model")
+        modelbox_grid.addWidget(self.model_load)
+
+        #Classes box
+        class_box = QtWidgets.QGroupBox("Structures") #model box, select what origamis should be exported
+        classbox_grid = QtWidgets.QVBoxLayout(class_box)
+        self.class_0_btn = QtWidgets.QCheckBox("Digit 1")
+        self.class_1_btn = QtWidgets.QCheckBox("Digit 2")
+        self.class_2_btn = QtWidgets.QCheckBox("20 nm Grid")
+        # self.class_3_btn = QtWidgets.QCheckBox("4 Corner") #Todo
+        classbox_grid.addWidget(self.class_0_btn)
+        classbox_grid.addWidget(self.class_1_btn)
+        classbox_grid.addWidget(self.class_2_btn)
+        # classbox_grid.addWidget(self.model_3_btn)
+        classbox_grid.addStretch(1)
 
         #Predict box
         predict_box = QtWidgets.QGroupBox("Predict")
         predict_grid = QtWidgets.QVBoxLayout(predict_box)
         self.predict_btn = QtWidgets.QPushButton("Predict")
+        self.predict_btn.clicked.connect(self.predict_structures)
         predict_grid.addWidget(self.predict_btn)
 
         accuracy_box = QtWidgets.QGroupBox("Filter export")
@@ -326,6 +330,7 @@ class Window(QtWidgets.QMainWindow):
         accuracy_grid.addWidget(self.export_accuracy,0,1)
 
         self.export_btn = QtWidgets.QPushButton("Export")
+        self.export_btn
 
         #Export box
         export_box = QtWidgets.QGroupBox("Export")
@@ -334,10 +339,11 @@ class Window(QtWidgets.QMainWindow):
         export_grid.addWidget(self.filter_accuracy_btn,0,0,1,1)
         export_grid.addWidget(self.export_btn,1,0,1,2)
 
-        self.grid.addWidget(view_box,0,0,-2,1)
+        self.grid.addWidget(view_box,0,0,-3,1)
         self.grid.addWidget(model_box,0,1,1,1)
-        self.grid.addWidget(predict_box,1,1,1,1)
-        self.grid.addWidget(export_box,2,1,1,1)
+        self.grid.addWidget(class_box,1,1,1,1)  
+        self.grid.addWidget(predict_box,2,1,1,1)
+        self.grid.addWidget(export_box,3,1,1,1)
 
         mainWidget = QtWidgets.QWidget()
         mainWidget.setLayout(self.grid)
@@ -349,14 +355,6 @@ class Window(QtWidgets.QMainWindow):
         )
         if path:
             self.openFile(path)
-
-    def save(self):
-        out_path = os.path.splitext(self.view.path)[0] + "_avg.hdf5"
-        path, exe = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save localizations", out_path, filter="*.hdf5"
-        )
-        if path:
-            self.view.save(path)
 
     def openFile(self, path):
         self.path = path
@@ -434,6 +432,16 @@ class Window(QtWidgets.QMainWindow):
         )
         self._pixmap = QtGui.QPixmap.fromImage(qimage)
         self.set_pixmap(self._pixmap)
+
+
+    def predict_structures(self, locs):
+        ##
+        return p_locs
+
+
+    def get_classes(self):
+
+        return classes
 
 def main():
 
