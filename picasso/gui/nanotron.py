@@ -5,20 +5,15 @@
     :author: Alexander Auer, 2019
     :copyright: Copyright (c) 2016 Jungmann Lab, MPI of Biochemistry
 """
-import functools
-import multiprocessing
 import os.path
 import os
 import sys
-import time
 import traceback
-from multiprocessing import sharedctypes
 from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
-import scipy
 import joblib
 import yaml
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -27,6 +22,7 @@ from .. import io, lib, render, nanotron
 
 DEFAULT_OVERSAMPLING = 1.0
 DEFAULT_MODEL_PATH = "/picasso/model/model.sav"
+
 
 @numba.jit(nopython=True, nogil=True)
 def render_hist(x, y, oversampling, t_min, t_max):
@@ -40,9 +36,10 @@ def render_hist(x, y, oversampling, t_min, t_max):
     render._fill(image, x, y)
     return len(x), image
 
+
 class Worker(QtCore.QThread):
 
-    progressMade = QtCore.pyqtSignal(int, int) # (current pick, total picks, locs)
+    progressMade = QtCore.pyqtSignal(int, int)
     finished = QtCore.pyqtSignal(np.recarray)
 
     def __init__(self, mlp, locs, pick_radius, oversampling, parent=None):
@@ -52,33 +49,37 @@ class Worker(QtCore.QThread):
         self.pick_radius = pick_radius
         self.oversampling = oversampling
 
-
     def run(self):
 
         img_shape = int(2 * self.pick_radius * self.oversampling)
-
-        self.prediction = np.zeros(len(np.unique(self.locs['group'])), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
+        self.prediction = np.zeros(len(np.unique(self.locs['group'])),
+                                   dtype=[('group', 'u4'),
+                                   ('prediction', 'i4'), ('score', 'f4')])
         self.prediction['group'] = np.unique(self.locs['group'])
         len_groups = len(np.unique(self.locs['group']))
-        p_locs = np.zeros(len(self.locs['group']), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
+        p_locs = np.zeros(len(self.locs['group']), dtype=[('group', 'u4'),
+                          ('prediction', 'i4'), ('score', 'f4')])
 
-        for id, pick in enumerate(tqdm(self.prediction['group'], desc='Predict')):
+        for id, pick in enumerate(tqdm(self.prediction['group'],
+                                  desc='Predict')):
 
             self.progressMade.emit(pick, len_groups)
 
             pred, pred_proba = nanotron.predict_structure(mlp=self.model,
-            locs=self.locs, pick=pick, img_shape=img_shape, pick_radius=self.pick_radius,
-            oversampling=self.oversampling)
+                                                          locs=self.locs,
+                                                          pick=pick,
+                                                          img_shape=img_shape,
+                                                          pick_radius=self.pick_radius,
+                                                          oversampling=self.oversampling)
 
             # Save predictions and scores in numpy array
             self.prediction[self.prediction['group'] == pick] = pick, pred[0], pred_proba.max()
             p_locs[self.locs['group'] == pick] = pick, pred[0], pred_proba.max()
 
-        self.locs = lib.append_to_rec(self.locs, p_locs['prediction'],'prediction')
-        self.locs = lib.append_to_rec(self.locs, p_locs['score'],'score')
+        self.locs = lib.append_to_rec(self.locs, p_locs['prediction'], 'prediction')
+        self.locs = lib.append_to_rec(self.locs, p_locs['score'], 'score')
 
         self.finished.emit(self.locs)
-
 
 
 class ParametersDialog(QtWidgets.QDialog):
@@ -169,7 +170,7 @@ class Window(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Picasso: Nanotron")
-        self.resize(768,512)
+        self.resize(768, 512)
         this_directory = os.path.dirname(os.path.realpath(__file__))
         icon_path = os.path.join(this_directory, "icons", "nanotron.ico")
         icon = QtGui.QIcon(icon_path)
@@ -182,7 +183,6 @@ class Window(QtWidgets.QMainWindow):
         # self.parameters_dialog = ParametersDialog(self)
         menu_bar = self.menuBar()
 
-        #File menu
         file_menu = menu_bar.addMenu("File")
         open_action = file_menu.addAction("Open")
         open_action.setShortcut(QtGui.QKeySequence.Open)
@@ -200,7 +200,7 @@ class Window(QtWidgets.QMainWindow):
 
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Load localization file.")
-        self.grid = QtWidgets.QGridLayout() # parent grid, all widget were placed in this grid.
+        self.grid = QtWidgets.QGridLayout()
         # self.grid.setSpacing(5)
 
         self.view = QtWidgets.QLabel("")
@@ -208,11 +208,10 @@ class Window(QtWidgets.QMainWindow):
         self.view.setFixedWidth(minsize)
         self.view.setFixedHeight(minsize)
 
-        view_box = QtWidgets.QGroupBox() #render box, locs file is rendered here
+        view_box = QtWidgets.QGroupBox()
         view_grid = QtWidgets.QGridLayout(view_box)
-        view_grid.addWidget(self.view,0,0)
+        view_grid.addWidget(self.view, 0, 0)
 
-        #Model box
         self.load_default_model()
         # model_box = QtWidgets.QGroupBox("Model")
         # modelbox_grid = QtWidgets.QVBoxLayout(model_box)
@@ -220,13 +219,10 @@ class Window(QtWidgets.QMainWindow):
         # modelbox_grid.addWidget(self.model_load_btn)
         # self.model_load_btn.clicked.connect(self.load_model)
 
-        #Classes box
-        self.class_box = QtWidgets.QGroupBox("Export Structures") #model box, select what origamis should be exported
-        self.classbox_grid = QtWidgets.QVBoxLayout(self.class_box)
+        self.class_box = QtWidgets.QGroupBox("Export Structures")
         self.update_class_buttons()
         self.classbox_grid.addStretch(1)
 
-        #Predict box
         predict_box = QtWidgets.QGroupBox("Predict")
         predict_grid = QtWidgets.QVBoxLayout(predict_box)
         self.predict_btn = QtWidgets.QPushButton("Predict")
@@ -241,35 +237,31 @@ class Window(QtWidgets.QMainWindow):
         self.export_accuracy.setRange(0, 1)
         self.export_accuracy.setValue(0.99)
         self.export_accuracy.setSingleStep(0.01)
-        accuracy_grid.addWidget(self.filter_accuracy_btn,1,0)
-        accuracy_grid.addWidget(self.export_accuracy,0,1)
+        accuracy_grid.addWidget(self.filter_accuracy_btn, 1, 0)
+        accuracy_grid.addWidget(self.export_accuracy, 0, 1)
 
         self.export_btn = QtWidgets.QPushButton("Export")
         self.export_btn.clicked.connect(self.export)
 
-        #Export box
         export_box = QtWidgets.QGroupBox("Export")
         export_grid = QtWidgets.QGridLayout(export_box)
-        export_grid.addWidget(self.export_accuracy, 0,1,1,1)
-        export_grid.addWidget(self.filter_accuracy_btn,0,0,1,1)
-        export_grid.addWidget(self.export_btn,1,0,1,2)
+        export_grid.addWidget(self.export_accuracy, 0, 1, 1, 1)
+        export_grid.addWidget(self.filter_accuracy_btn, 0, 0, 1, 1)
+        export_grid.addWidget(self.export_btn, 1, 0, 1, 2)
 
+        self.grid.addWidget(view_box, 0, 0, -3, 1)
+        self.grid.addWidget(predict_box, 0, 1, 1, 1)
 
-
-        self.grid.addWidget(view_box,0,0,-3,1)
-        self.grid.addWidget(predict_box,0,1,1,1)
-
-        self.grid.addWidget(self.class_box,2,1,1,1)
-        self.grid.addWidget(export_box,3,1,1,1)
+        self.grid.addWidget(self.class_box, 2, 1, 1, 1)
+        self.grid.addWidget(export_box, 3, 1, 1, 1)
 
         mainWidget = QtWidgets.QWidget()
         mainWidget.setLayout(self.grid)
         self.setCentralWidget(mainWidget)
 
-
     def predict(self):
 
-        if (self.predicting == False) and (self.model_loaded == True):
+        if (self.predicting is False) and (self.model_loaded is True):
 
             self.predicting = True
 
@@ -294,7 +286,7 @@ class Window(QtWidgets.QMainWindow):
     def on_progress(self, pick, total_picks):
         # self.locs = locs.copy()
         self.status_bar.showMessage(
-            "From {} picks - predicted {}".format(total_picks,pick)
+                                    "From {} picks - predicted {}".format(total_picks, pick)
         )
 
     def open(self):
@@ -323,10 +315,10 @@ class Window(QtWidgets.QMainWindow):
         else:
             groups = np.unique(self.locs.group)
             groups_max = max(groups)
-            n_locs = len(self.locs)
 
             self.update_image()
-            self.status_bar.showMessage("{} picks loaded. Ready for processing.".format(str(groups_max)))
+            self.status_bar.showMessage("{} picks loaded. Ready for processing."
+                                        .format(str(groups_max)))
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -387,34 +379,33 @@ class Window(QtWidgets.QMainWindow):
         try:
             self.model = joblib.load(path)
             self.nanotron_log['Model Path'] = path
-        except Exception as e:
+        except Exception:
             raise ValueError("No model file loaded.")
 
         try:
             with open(path[:-3]+'yaml', "r") as f:
-                self.model_info = yaml.load(f, Loader = yaml.FullLoader)
+                self.model_info = yaml.load(f, Loader=yaml.FullLoader)
                 self.classes = []
                 self.classes = self.model_info["Classes"]
                 self.model_loaded = True
         except io.NoMetadataFileError:
             return
 
-
     def load_model(self):
 
         path, exe = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Load model file", filter="*.sav" ,directory=None)
+            self, "Load model file", filter="*.sav", directory=None)
         if path:
 
             try:
                 self.model = joblib.load(path)
                 self.nanotron_log['Model Path'] = path
-            except Exception as e:
+            except Exception:
                 raise ValueError("No model file loaded.")
 
             try:
                 with open(path[:-3]+'yaml', "r") as f:
-                    self.model_info = yaml.load(f, Loader = yaml.FullLoader)
+                    self.model_info = yaml.load(f, Loader=yaml.FullLoader)
                     self.classes = []
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
@@ -449,9 +440,8 @@ class Window(QtWidgets.QMainWindow):
                         export_map.append(False)
 
             for key, item in self.classes.items():
-                if export_map[key] == True:
+                if export_map[key] is True:
                     export_classes[key] = item
-
 
             all_picks = len(np.unique(self.locs['group']))
             accuracy = self.export_accuracy.value()
@@ -467,7 +457,7 @@ class Window(QtWidgets.QMainWindow):
 
                 filtered_locs = self.locs[self.locs['prediction'] == prediction]
                 n_groups = np.unique(filtered_locs['group'])
-                n_new_groups = np.arange(0, len(n_groups),1)
+                n_new_groups = np.arange(0, len(n_groups), 1)
                 regroup_dict = dict(zip(n_groups, n_new_groups))
                 regroup_map = [regroup_dict[_] for _ in filtered_locs['group']]
                 filtered_locs['group'] = regroup_map
@@ -482,6 +472,7 @@ class Window(QtWidgets.QMainWindow):
 
             print('Export of all predicted datasets finished.')
             self.status_bar.showMessage("{} files exported.".format(len(export_classes.items())))
+
 
 def main():
 
