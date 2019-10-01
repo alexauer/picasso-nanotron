@@ -8,9 +8,8 @@
     :copyright: Copyright (c) 2019 Jungmann Lab, MPI of Biochemistry
 """
 
-import numpy as _np
-from tqdm import tqdm as _tqdm
-import numba as _numba
+import numpy as np
+from tqdm import tqdm as tqdm
 
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score
@@ -18,13 +17,13 @@ from sklearn.externals import joblib
 
 from . import io, render, lib
 
-def prepare_img(img, shape, alpha=1, bg=0):
+def prepare_img(img, img_shape, alpha=1, bg=0):
 
     img = alpha * img - bg
     img = img.astype('float')
     img = img / img.max()
     img = img.clip(min=0)
-    img = img.reshape(shape**2)
+    img = img.reshape(img_shape**2)
 
     return img
 
@@ -57,12 +56,12 @@ def roi_to_img(locs, pick, radius, oversampling):
 
     return pick_img
 
-def prepare_data(locs, identification, picks_radius, oversampling, image_shape, alpha=10, bg=1, export=False):
+def prepare_data(locs, identification, picks_radius, oversampling, img_shape, alpha=10, bg=1, export=False):
 
     data = []
     label = []
 
-    for pick in tqdm(range(locs.group.max()),desc='Prepare class '+str(identification)):
+    for pick in tqdm(range(locs.group.max()), desc='Prepare class '+str(identification)):
 
         pick_img = roi_to_img(locs, pick, radius=pick_radius, oversampling=oversampling)
 
@@ -70,7 +69,7 @@ def prepare_data(locs, identification, picks_radius, oversampling, image_shape, 
             filename = 'id' + str(identification) + '-' + str(pick)
             plt.imsave('./img/' + filename + '.png', (alpha*pick_img-bg), cmap='Greys', vmax=10)
 
-        pick_img = prepare_img(pick_img, shape=img_shape, alpha=alpha, bg=bg)
+        pick_img = prepare_img(pick_img, img_shape=img_shape, alpha=alpha, bg=bg)
 
         data.append(pick_img)
         label.append(identification)
@@ -84,33 +83,18 @@ def prepare_data(locs, identification, picks_radius, oversampling, image_shape, 
 #
 #     return np.asarray(x), np.asarray(y)
 
-def predict_structures(mlp, locs, img_shape, pick_radius, oversampling):
-
-    prediction = np.zeros(len(np.unique(locs['group'])), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
-    prediction['group'] = np.unique(locs['group'])
-
-    p_locs = np.zeros(len(locs['group']), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
+def predict_structure(mlp, locs, pick, img_shape, pick_radius, oversampling):
 
     # Iterate through groups, render, predict and save append to according DataFrame
-    n_groups = np.unique(locs['group'])
-    for pick in tqdm(range(len(n_groups)), desc='Predict'):
 
-        img = roi_to_img(locs, pick=pick, radius=pick_radius, oversampling=oversampling)
-        img = prepare_img(img, shape=img_shape, alpha=10, bg=1)
-        img = img.reshape(1, img_shape**2)
+    img = roi_to_img(locs, pick=pick, radius=pick_radius, oversampling=oversampling)
+    img = prepare_img(img, img_shape=img_shape, alpha=10, bg=1)
+    img = img.reshape(1, img_shape**2)
 
-        pred = mlp.predict(img)
-        pred_proba = mlp.predict_proba(img)
+    pred = mlp.predict(img)
+    pred_proba = mlp.predict_proba(img)
 
-        # Save predictions and scores in numpy array
-        prediction[prediction['group'] == pick] = pick, pred[0], pred_proba.max()
-        p_locs[locs['group'] == pick] = pick, pred[0], pred_proba.max()
-
-    predicted_locs = lib.append_to_rec(locs, p_locs['prediction'],'prediction')
-    predicted_locs = lib.append_to_rec(predicted_locs, p_locs['score'],'score')
-    print('Predictions added to locs.')
-
-    return predicted_locs, prediction
+    return pred, pred_proba
 
 def export_locs(locs, path, classes, filtering=False, accuracy=0.9, regroup=False):
 
@@ -124,18 +108,20 @@ def export_locs(locs, path, classes, filtering=False, accuracy=0.9, regroup=Fals
 
         print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
 
-    for prediction in tqdm(range(len(np.unique(locs['prediction']))), desc='Exporting files'):
+    for prediction, name in enumerate(tqdm(classes, desc='Exporting files')):
+        print(prediction)
+        print(name)
 
         filtered_locs = locs[locs['prediction'] == prediction]
 
         if regroup == True:
             n_groups = np.unique(filtered_locs['group'])
-            n_new_groups = np.arange(0,len(n_groups),1)
+            n_new_groups = np.arange(0, len(n_groups),1)
             regroup_dict = dict(zip(n_groups, n_new_groups))
             regroup_map = [regroup_dict[_] for _ in filtered_locs['group']]
             filtered_locs['group'] = regroup_map
-            print('Regrouped datatset {} to {} picks.'.format(classes[prediction], len(n_groups)))
+            print('Regrouped datatset {} to {} picks.'.format(name, len(n_groups)))
 
-        io.save_locs(path + classes[prediction] +'.hdf5', filtered_locs, info)
+        io.save_locs(path + name +'.hdf5', filtered_locs, info)
 
     print('Export of all predicted datasets finished.')

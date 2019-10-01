@@ -8,21 +8,25 @@
 import functools
 import multiprocessing
 import os.path
+import os
 import sys
 import time
 import traceback
 from multiprocessing import sharedctypes
+from tqdm import tqdm
 
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
 import scipy
-from sklearn.externals import joblib
+import joblib
+import yaml
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from .. import io, lib, render
+from .. import io, lib, render, nanotron
 
 DEFAULT_OVERSAMPLING = 1.0
+DEFAULT_MODEL_PATH = "/picasso/model/model.sav"
 
 @numba.jit(nopython=True, nogil=True)
 def render_hist(x, y, oversampling, t_min, t_max):
@@ -36,132 +40,43 @@ def render_hist(x, y, oversampling, t_min, t_max):
     render._fill(image, x, y)
     return len(x), image
 
-
-def compute_xcorr(CF_image_avg, image):
-    F_image = np.fft.fft2(image)
-    xcorr = np.fft.fftshift(np.real(np.fft.ifft2((F_image * CF_image_avg))))
-    return xcorr
-
-
-def align_group(
-    angles,
-    oversampling,
-    t_min,
-    t_max,
-    CF_image_avg,
-    image_half,
-    counter,
-    lock,
-    group,
-):
-    with lock:
-        counter.value += 1
-    index = group_index[group].nonzero()[1]
-    x_rot = x[index]
-    y_rot = y[index]
-    x_original = x_rot.copy()
-    y_original = y_rot.copy()
-    xcorr_max = 0.0
-    for angle in angles:
-        # rotate locs
-        x_rot = np.cos(angle) * x_original - np.sin(angle) * y_original
-        y_rot = np.sin(angle) * x_original + np.cos(angle) * y_original
-        # render group image
-        N, image = render_hist(x_rot, y_rot, oversampling, t_min, t_max)
-        # calculate cross-correlation
-        xcorr = compute_xcorr(CF_image_avg, image)
-        # find the brightest pixel
-        y_max, x_max = np.unravel_index(xcorr.argmax(), xcorr.shape)
-        # store the transformation if the correlation is larger than before
-        if xcorr[y_max, x_max] > xcorr_max:
-            xcorr_max = xcorr[y_max, x_max]
-            rot = angle
-            dy = np.ceil(y_max - image_half) / oversampling
-            dx = np.ceil(x_max - image_half) / oversampling
-    # rotate and shift image group locs
-    x[index] = np.cos(rot) * x_original - np.sin(rot) * y_original - dx
-    y[index] = np.sin(rot) * x_original + np.cos(rot) * y_original - dy
-
-
-def init_pool(x_, y_, group_index_):
-    global x, y, group_index
-    x = np.ctypeslib.as_array(x_)
-    y = np.ctypeslib.as_array(y_)
-    group_index = group_index_
-
-
 class Worker(QtCore.QThread):
 
-    progressMade = QtCore.pyqtSignal(int, int, int, int, np.recarray, bool)
+    progressMade = QtCore.pyqtSignal(int, int, np.recarray)
+    # (current pick, total picks, locs)
 
-    def __init__(self, locs, r, group_index, oversampling, iterations):
+    def __init__(self, mlp, locs, pick_radius, oversampling):
         super().__init__()
+        self.model = mlp
         self.locs = locs.copy()
-        self.r = r
-        self.t_min = -r
-        self.t_max = r
-        self.group_index = group_index
+        self.pick_radius = pick_radius
         self.oversampling = oversampling
-        self.iterations = iterations
 
     def run(self):
-        n_groups = self.group_index.shape[0]
-        a_step = np.arcsin(1 / (self.oversampling * self.r))
-        angles = np.arange(0, 2 * np.pi, a_step)
-        n_workers = max(1, int(0.75 * multiprocessing.cpu_count()))
-        manager = multiprocessing.Manager()
-        counter = manager.Value("d", 0)
-        lock = manager.Lock()
-        groups_per_worker = max(1, int(n_groups / n_workers))
-        for it in range(self.iterations):
-            counter.value = 0
-            # render average image
-            N_avg, image_avg = render.render_hist(
-                self.locs,
-                self.oversampling,
-                self.t_min,
-                self.t_min,
-                self.t_max,
-                self.t_max,
-            )
-            n_pixel, _ = image_avg.shape
-            image_half = n_pixel / 2
-            CF_image_avg = np.conj(np.fft.fft2(image_avg))
-            # TODO: blur average
-            fc = functools.partial(
-                align_group,
-                angles,
-                self.oversampling,
-                self.t_min,
-                self.t_max,
-                CF_image_avg,
-                image_half,
-                counter,
-                lock,
-            )
-            result = pool.map_async(fc, range(n_groups), groups_per_worker)
-            while not result.ready():
-                self.progressMade.emit(
-                    it + 1,
-                    self.iterations,
-                    counter.value,
-                    n_groups,
-                    self.locs,
-                    False,
-                )
-                time.sleep(0.5)
-            self.locs.x = np.ctypeslib.as_array(x)
-            self.locs.y = np.ctypeslib.as_array(y)
-            self.locs.x -= np.mean(self.locs.x)
-            self.locs.y -= np.mean(self.locs.y)
-            self.progressMade.emit(
-                it + 1,
-                self.iterations,
-                counter.value,
-                n_groups,
-                self.locs,
-                True,
-            )
+
+        img_shape = int(2 * pick_radius * oversampling)
+
+        self.prediction = np.zeros(len(np.unique(self.locs['group'])), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
+        self.prediction['group'] = np.unique(self.locs['group'])
+        len_groups = len(np.unique(self.locs['group']))
+        p_locs = np.zeros(len(self.locs['group']), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
+
+        for id, pick in enumerate(tqdm(self.prediction['group'], desc='Predict')):
+
+            self.progressMade.emit(pick, len_groups, self.locs)
+
+            pred, pred_proba = nanotron.predict_structure(mlp=self.model,
+            locs=self.locs,pick=pick, img_shape=img_shape, pick_radius=pick_radius,
+            oversampling=oversampling)
+
+            # Save predictions and scores in numpy array
+            self.prediction[self.prediction['group'] == pick] = pick, pred[0], pred_proba.max()
+            p_locs[self.locs['group'] == pick] = pick, pred[0], pred_proba.max()
+
+        self.locs = lib.append_to_rec(self.locs, p_locs['prediction'],'prediction')
+        self.locs = lib.append_to_rec(self.locs, p_locs['score'],'score')
+
+        self.progressMade.emit(pick, len_groups, self.locs)
 
 
 class ParametersDialog(QtWidgets.QDialog):
@@ -258,6 +173,8 @@ class Window(QtWidgets.QMainWindow):
         icon = QtGui.QIcon(icon_path)
         self.setWindowIcon(icon)
         self.setAcceptDrops(True)
+        self.predicting = False
+        self.model_loaded = False
 
         # self.parameters_dialog = ParametersDialog(self)
         menu_bar = self.menuBar()
@@ -279,7 +196,7 @@ class Window(QtWidgets.QMainWindow):
         # average_action.triggered.connect(self.view.average)
 
         self.status_bar = self.statusBar()
-
+        self.status_bar.showMessage("Load localization file.")
         self.grid = QtWidgets.QGridLayout() # parent grid, all widget were placed in this grid.
         # self.grid.setSpacing(5)
 
@@ -293,29 +210,24 @@ class Window(QtWidgets.QMainWindow):
         view_grid.addWidget(self.view,0,0)
 
         #Model box
+        self.load_default_model()
         model_box = QtWidgets.QGroupBox("Model")
         modelbox_grid = QtWidgets.QVBoxLayout(model_box)
-        self.model_load = QtWidgets.QPushButton("Load Model")
-        modelbox_grid.addWidget(self.model_load)
+        self.model_load_btn = QtWidgets.QPushButton("Load Model")
+        modelbox_grid.addWidget(self.model_load_btn)
+        self.model_load_btn.clicked.connect(self.load_model)
 
         #Classes box
-        class_box = QtWidgets.QGroupBox("Structures") #model box, select what origamis should be exported
-        classbox_grid = QtWidgets.QVBoxLayout(class_box)
-        self.class_0_btn = QtWidgets.QCheckBox("Digit 1")
-        self.class_1_btn = QtWidgets.QCheckBox("Digit 2")
-        self.class_2_btn = QtWidgets.QCheckBox("20 nm Grid")
-        # self.class_3_btn = QtWidgets.QCheckBox("4 Corner") #Todo
-        classbox_grid.addWidget(self.class_0_btn)
-        classbox_grid.addWidget(self.class_1_btn)
-        classbox_grid.addWidget(self.class_2_btn)
-        # classbox_grid.addWidget(self.model_3_btn)
-        classbox_grid.addStretch(1)
+        self.class_box = QtWidgets.QGroupBox("Structures") #model box, select what origamis should be exported
+        self.classbox_grid = QtWidgets.QVBoxLayout(self.class_box)
+        self.update_class_buttons()
+        self.classbox_grid.addStretch(1)
 
         #Predict box
         predict_box = QtWidgets.QGroupBox("Predict")
         predict_grid = QtWidgets.QVBoxLayout(predict_box)
         self.predict_btn = QtWidgets.QPushButton("Predict")
-        self.predict_btn.clicked.connect(self.predict_structures)
+        self.predict_btn.clicked.connect(self.predict)
         predict_grid.addWidget(self.predict_btn)
 
         accuracy_box = QtWidgets.QGroupBox("Filter export")
@@ -330,7 +242,7 @@ class Window(QtWidgets.QMainWindow):
         accuracy_grid.addWidget(self.export_accuracy,0,1)
 
         self.export_btn = QtWidgets.QPushButton("Export")
-        self.export_btn
+        self.export_btn.clicked.connect(self.export)
 
         #Export box
         export_box = QtWidgets.QGroupBox("Export")
@@ -341,13 +253,40 @@ class Window(QtWidgets.QMainWindow):
 
         self.grid.addWidget(view_box,0,0,-3,1)
         self.grid.addWidget(model_box,0,1,1,1)
-        self.grid.addWidget(class_box,1,1,1,1)  
+        self.grid.addWidget(self.class_box,1,1,1,1)
         self.grid.addWidget(predict_box,2,1,1,1)
         self.grid.addWidget(export_box,3,1,1,1)
 
         mainWidget = QtWidgets.QWidget()
         mainWidget.setLayout(self.grid)
         self.setCentralWidget(mainWidget)
+
+
+    def predict(self):
+        if (self.predicting == False) and (self.model_loaded == True):
+
+            self.predicting = True
+
+            self.oversampling = self.model_info["Oversampling"]
+            self.pick_diameter = self.model_info["Pick Diameter"]
+            self.pick_radius = self.pick_diameter / 2
+
+            self.thread = Worker(
+                self.model, self.locs, self.pick_radius, self.oversampling,
+            )
+            self.thread.progressMade.connect(self.on_progress)
+            self.thread.finished.connect(self.on_finished)
+            self.thread.start()
+
+    def on_finished(self):
+        self.window.status_bar.showMessage("Prediction done.")
+        self.running = False
+
+    def on_progress(self, pick, total_picks, locs):
+        self.locs = locs.copy()
+        self.window.status_bar.showMessage(
+            "Predicting {} of total {} picks.".format(pick, total_picks)
+        )
 
     def open(self):
         path, exe = QtWidgets.QFileDialog.getOpenFileName(
@@ -433,15 +372,80 @@ class Window(QtWidgets.QMainWindow):
         self._pixmap = QtGui.QPixmap.fromImage(qimage)
         self.set_pixmap(self._pixmap)
 
+    def load_default_model(self):
 
-    def predict_structures(self, locs):
-        ##
-        return p_locs
+        path = os.getcwd() + DEFAULT_MODEL_PATH
+
+        try:
+            self.model = joblib.load(path)
+        except Exception as e:
+            raise ValueError("No model file loaded.")
+
+        try:
+            with open(path[:-3]+'yaml', "r") as f:
+                self.model_info = yaml.load(f, Loader = yaml.FullLoader)
+                self.classes = []
+                self.classes = self.model_info["Classes"]
+                self.model_loaded = True
+        except Exception as e:
+            raise ValueError("No classes in model metadata file.")
 
 
-    def get_classes(self):
+    def load_model(self):
 
-        return classes
+        path, exe = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Load model file", directory=None)
+        if path:
+
+            try:
+                self.model = joblib.load(path)
+            except Exception as e:
+                raise ValueError("No model file loaded.")
+
+            try:
+                with open(path[:-3]+'yaml', "r") as f:
+                    self.model_info = yaml.load(f, Loader = yaml.FullLoader)
+                    self.classes = []
+                    self.classes = self.model_info["Classes"]
+                    self.model_loaded = True
+            except Exception as e:
+                raise ValueError("No classes in model metadata file.")
+
+    def update_class_buttons(self):
+
+        for id, name in self.classes.items():
+            c = QtWidgets.QCheckBox(name)
+            self.classbox_grid.addWidget(c)
+
+    def export(self):
+
+        export_map = []
+        export_classes = {}
+
+        checks = (self.classbox_grid.itemAt(i) for i in range(self.classbox_grid.count()))
+        for btn in checks:
+
+            if isinstance(btn, QtWidgets.QWidgetItem):
+                if btn.widget().checkState():
+                    export_map.append(True)
+                else:
+                    export_map.append(False)
+
+        for key, item in self.classes.items():
+            if export_map[key] == True:
+                export_classes[key] = item
+
+
+        accuracy = self.export_accuracy.value()
+
+        if self.filter_accuracy_btn.isChecked():
+            filtering = True
+        else:
+            filtering = False
+
+        nanotron.export_locs(locs = self.locs, path = self.path, classes=self.classes, filtering=filtering,
+        accuracy = accuracy, regroup = True)
+
 
 def main():
 
