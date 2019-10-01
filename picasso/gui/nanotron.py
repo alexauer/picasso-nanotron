@@ -177,6 +177,7 @@ class Window(QtWidgets.QMainWindow):
         self.setAcceptDrops(True)
         self.predicting = False
         self.model_loaded = False
+        self.nanotron_log = {}
 
         # self.parameters_dialog = ParametersDialog(self)
         menu_bar = self.menuBar()
@@ -213,14 +214,14 @@ class Window(QtWidgets.QMainWindow):
 
         #Model box
         self.load_default_model()
-        model_box = QtWidgets.QGroupBox("Model")
-        modelbox_grid = QtWidgets.QVBoxLayout(model_box)
-        self.model_load_btn = QtWidgets.QPushButton("Load Model")
-        modelbox_grid.addWidget(self.model_load_btn)
-        self.model_load_btn.clicked.connect(self.load_model)
+        # model_box = QtWidgets.QGroupBox("Model")
+        # modelbox_grid = QtWidgets.QVBoxLayout(model_box)
+        # self.model_load_btn = QtWidgets.QPushButton("Load Model")
+        # modelbox_grid.addWidget(self.model_load_btn)
+        # self.model_load_btn.clicked.connect(self.load_model)
 
         #Classes box
-        self.class_box = QtWidgets.QGroupBox("Structures") #model box, select what origamis should be exported
+        self.class_box = QtWidgets.QGroupBox("Export Structures") #model box, select what origamis should be exported
         self.classbox_grid = QtWidgets.QVBoxLayout(self.class_box)
         self.update_class_buttons()
         self.classbox_grid.addStretch(1)
@@ -234,11 +235,11 @@ class Window(QtWidgets.QMainWindow):
 
         accuracy_box = QtWidgets.QGroupBox("Filter export")
         accuracy_grid = QtWidgets.QGridLayout(accuracy_box)
-        self.filter_accuracy_btn = QtWidgets.QCheckBox("Accuracy Filter")
+        self.filter_accuracy_btn = QtWidgets.QCheckBox("Probability")
         self.export_accuracy = QtWidgets.QDoubleSpinBox()
         self.export_accuracy.setDecimals(2)
         self.export_accuracy.setRange(0, 1)
-        self.export_accuracy.setValue(0.9)
+        self.export_accuracy.setValue(0.99)
         self.export_accuracy.setSingleStep(0.01)
         accuracy_grid.addWidget(self.filter_accuracy_btn,1,0)
         accuracy_grid.addWidget(self.export_accuracy,0,1)
@@ -253,10 +254,12 @@ class Window(QtWidgets.QMainWindow):
         export_grid.addWidget(self.filter_accuracy_btn,0,0,1,1)
         export_grid.addWidget(self.export_btn,1,0,1,2)
 
+
+
         self.grid.addWidget(view_box,0,0,-3,1)
-        self.grid.addWidget(model_box,0,1,1,1)
-        self.grid.addWidget(self.class_box,1,1,1,1)
-        self.grid.addWidget(predict_box,2,1,1,1)
+        self.grid.addWidget(predict_box,0,1,1,1)
+
+        self.grid.addWidget(self.class_box,2,1,1,1)
         self.grid.addWidget(export_box,3,1,1,1)
 
         mainWidget = QtWidgets.QWidget()
@@ -286,6 +289,8 @@ class Window(QtWidgets.QMainWindow):
         self.locs = locs.copy()
         self.predicting = False
 
+        self.status_bar.showMessage('Prediction finished.')
+
     def on_progress(self, pick, total_picks):
         # self.locs = locs.copy()
         self.status_bar.showMessage(
@@ -297,9 +302,9 @@ class Window(QtWidgets.QMainWindow):
             self, "Open localizations", filter="*.hdf5"
         )
         if path:
-            self.openFile(path)
+            self.open_file(path)
 
-    def openFile(self, path):
+    def open_file(self, path):
         self.path = path
 
         try:
@@ -335,7 +340,7 @@ class Window(QtWidgets.QMainWindow):
         ext = os.path.splitext(path)[1].lower()
         if ext == ".hdf5":
             print("Opening {} ..".format(path))
-            self.openFile(path)
+            self.open_file(path)
 
     def update_image(self, *args):
 
@@ -379,9 +384,9 @@ class Window(QtWidgets.QMainWindow):
     def load_default_model(self):
 
         path = os.getcwd() + DEFAULT_MODEL_PATH
-
         try:
             self.model = joblib.load(path)
+            self.nanotron_log['Model Path'] = path
         except Exception as e:
             raise ValueError("No model file loaded.")
 
@@ -391,18 +396,19 @@ class Window(QtWidgets.QMainWindow):
                 self.classes = []
                 self.classes = self.model_info["Classes"]
                 self.model_loaded = True
-        except Exception as e:
-            raise ValueError("No classes in model metadata file.")
+        except io.NoMetadataFileError:
+            return
 
 
     def load_model(self):
 
         path, exe = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Load model file", directory=None)
+            self, "Load model file", filter="*.sav" ,directory=None)
         if path:
 
             try:
                 self.model = joblib.load(path)
+                self.nanotron_log['Model Path'] = path
             except Exception as e:
                 raise ValueError("No model file loaded.")
 
@@ -412,13 +418,14 @@ class Window(QtWidgets.QMainWindow):
                     self.classes = []
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
-            except Exception as e:
-                raise ValueError("No classes in model metadata file.")
+            except io.NoMetadataFileError:
+                return
 
     def update_class_buttons(self):
 
         for id, name in self.classes.items():
             c = QtWidgets.QCheckBox(name)
+            c.setChecked(True)
             self.classbox_grid.addWidget(c)
 
     def export(self):
@@ -446,16 +453,35 @@ class Window(QtWidgets.QMainWindow):
                     export_classes[key] = item
 
 
+            all_picks = len(np.unique(self.locs['group']))
             accuracy = self.export_accuracy.value()
 
             if self.filter_accuracy_btn.isChecked():
-                filtering = True
-            else:
-                filtering = False
+                print('Probability filter set to {:4}%'.format(accuracy*100))
+                self.locs = self.locs[self.locs['score'] >= accuracy]
+                dropped_picks = all_picks - len(np.unique(self.locs['group']))
+                print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
+                self.nanotron_log['Probability'] = accuracy
 
-            nanotron.export_locs(locs = self.locs, path = self.path, classes=self.classes, filtering=filtering,
-            accuracy = accuracy, regroup = True)
+            for prediction, name in export_classes.items():
 
+                filtered_locs = self.locs[self.locs['prediction'] == prediction]
+                n_groups = np.unique(filtered_locs['group'])
+                n_new_groups = np.arange(0, len(n_groups),1)
+                regroup_dict = dict(zip(n_groups, n_new_groups))
+                regroup_map = [regroup_dict[_] for _ in filtered_locs['group']]
+                filtered_locs['group'] = regroup_map
+                print('Regrouped datatset {} to {} picks.'.format(name, len(n_groups)))
+
+                nanotron_info = self.nanotron_log.copy()
+                nanotron_info.update({"Generated by": "Picasso Nanotron"})
+                info = self.info + [nanotron_info]
+
+                out_path = os.path.splitext(self.path)[0] +'_'+name.replace(" ", "_").lower()+".hdf5"
+                io.save_locs(out_path, filtered_locs, info)
+
+            print('Export of all predicted datasets finished.')
+            self.status_bar.showMessage("{} files exported.".format(len(export_classes.items())))
 
 def main():
 

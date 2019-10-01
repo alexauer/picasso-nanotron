@@ -94,33 +94,3 @@ def predict_structure(mlp, locs, pick, img_shape, pick_radius, oversampling):
     pred_proba = mlp.predict_proba(img)
 
     return pred, pred_proba
-
-def export_locs(locs, path, classes, filtering=False, accuracy=0.9, regroup=False):
-
-    all_picks = len(np.unique(locs['group']))
-
-    if filtering == True:
-
-        print('Arruracy filter set to {}%'.format(accuracy*100))
-        locs = locs[locs['score'] >= accuracy]
-        dropped_picks = all_picks - len(np.unique(locs['group']))
-
-        print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
-
-    for prediction, name in enumerate(tqdm(classes, desc='Exporting files')):
-        print(prediction)
-        print(name)
-
-        filtered_locs = locs[locs['prediction'] == prediction]
-
-        if regroup == True:
-            n_groups = np.unique(filtered_locs['group'])
-            n_new_groups = np.arange(0, len(n_groups),1)
-            regroup_dict = dict(zip(n_groups, n_new_groups))
-            regroup_map = [regroup_dict[_] for _ in filtered_locs['group']]
-            filtered_locs['group'] = regroup_map
-            print('Regrouped datatset {} to {} picks.'.format(name, len(n_groups)))
-
-        io.save_locs(path + name +'.hdf5', filtered_locs, info)
-
-    print('Export of all predicted datasets finished.')
