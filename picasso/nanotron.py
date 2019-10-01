@@ -13,7 +13,6 @@ from tqdm import tqdm as tqdm
 
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score
-from sklearn.externals import joblib
 
 from . import io, render, lib
 

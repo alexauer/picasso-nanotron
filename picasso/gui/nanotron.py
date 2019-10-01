@@ -42,19 +42,20 @@ def render_hist(x, y, oversampling, t_min, t_max):
 
 class Worker(QtCore.QThread):
 
-    progressMade = QtCore.pyqtSignal(int, int, np.recarray)
-    # (current pick, total picks, locs)
+    progressMade = QtCore.pyqtSignal(int, int) # (current pick, total picks, locs)
+    finished = QtCore.pyqtSignal(np.recarray)
 
-    def __init__(self, mlp, locs, pick_radius, oversampling):
+    def __init__(self, mlp, locs, pick_radius, oversampling, parent=None):
         super().__init__()
         self.model = mlp
         self.locs = locs.copy()
         self.pick_radius = pick_radius
         self.oversampling = oversampling
 
+
     def run(self):
 
-        img_shape = int(2 * pick_radius * oversampling)
+        img_shape = int(2 * self.pick_radius * self.oversampling)
 
         self.prediction = np.zeros(len(np.unique(self.locs['group'])), dtype=[('group','u4'),('prediction','i4'),('score','f4')])
         self.prediction['group'] = np.unique(self.locs['group'])
@@ -63,11 +64,11 @@ class Worker(QtCore.QThread):
 
         for id, pick in enumerate(tqdm(self.prediction['group'], desc='Predict')):
 
-            self.progressMade.emit(pick, len_groups, self.locs)
+            self.progressMade.emit(pick, len_groups)
 
             pred, pred_proba = nanotron.predict_structure(mlp=self.model,
-            locs=self.locs,pick=pick, img_shape=img_shape, pick_radius=pick_radius,
-            oversampling=oversampling)
+            locs=self.locs, pick=pick, img_shape=img_shape, pick_radius=self.pick_radius,
+            oversampling=self.oversampling)
 
             # Save predictions and scores in numpy array
             self.prediction[self.prediction['group'] == pick] = pick, pred[0], pred_proba.max()
@@ -76,7 +77,7 @@ class Worker(QtCore.QThread):
         self.locs = lib.append_to_rec(self.locs, p_locs['prediction'],'prediction')
         self.locs = lib.append_to_rec(self.locs, p_locs['score'],'score')
 
-        self.progressMade.emit(pick, len_groups, self.locs)
+        self.finish.emit(self.locs)
 
 
 class ParametersDialog(QtWidgets.QDialog):
@@ -164,8 +165,8 @@ class View(QtWidgets.QLabel):
 
 
 class Window(QtWidgets.QMainWindow):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
         self.setWindowTitle("Picasso: Nanotron")
         self.resize(768,512)
         this_directory = os.path.dirname(os.path.realpath(__file__))
@@ -263,6 +264,7 @@ class Window(QtWidgets.QMainWindow):
 
 
     def predict(self):
+
         if (self.predicting == False) and (self.model_loaded == True):
 
             self.predicting = True
@@ -275,17 +277,19 @@ class Window(QtWidgets.QMainWindow):
                 self.model, self.locs, self.pick_radius, self.oversampling,
             )
             self.thread.progressMade.connect(self.on_progress)
+
             self.thread.finished.connect(self.on_finished)
             self.thread.start()
 
-    def on_finished(self):
-        self.window.status_bar.showMessage("Prediction done.")
-        self.running = False
-
-    def on_progress(self, pick, total_picks, locs):
+    def on_finished(self, locs):
         self.locs = locs.copy()
-        self.window.status_bar.showMessage(
-            "Predicting {} of total {} picks.".format(pick, total_picks)
+        self.window.status_bar.showMessage('Finished {}'.format(finished))
+        self.predicting = False
+
+    def on_progress(self, pick, total_picks):
+        # self.locs = locs.copy()
+        self.status_bar.showMessage(
+            "From {} picks - predicted {}".format(total_picks,pick)
         )
 
     def open(self):
@@ -419,32 +423,38 @@ class Window(QtWidgets.QMainWindow):
 
     def export(self):
 
-        export_map = []
-        export_classes = {}
-
-        checks = (self.classbox_grid.itemAt(i) for i in range(self.classbox_grid.count()))
-        for btn in checks:
-
-            if isinstance(btn, QtWidgets.QWidgetItem):
-                if btn.widget().checkState():
-                    export_map.append(True)
-                else:
-                    export_map.append(False)
-
-        for key, item in self.classes.items():
-            if export_map[key] == True:
-                export_classes[key] = item
-
-
-        accuracy = self.export_accuracy.value()
-
-        if self.filter_accuracy_btn.isChecked():
-            filtering = True
+        if not hasattr(self.locs, "prediction"):
+            msgBox = QtWidgets.QMessageBox(self)
+            msgBox.setWindowTitle("Error")
+            msgBox.setText("No predictions. Predict first.")
+            msgBox.exec_()
         else:
-            filtering = False
+            export_map = []
+            export_classes = {}
 
-        nanotron.export_locs(locs = self.locs, path = self.path, classes=self.classes, filtering=filtering,
-        accuracy = accuracy, regroup = True)
+            checks = (self.classbox_grid.itemAt(i) for i in range(self.classbox_grid.count()))
+            for btn in checks:
+
+                if isinstance(btn, QtWidgets.QWidgetItem):
+                    if btn.widget().checkState():
+                        export_map.append(True)
+                    else:
+                        export_map.append(False)
+
+            for key, item in self.classes.items():
+                if export_map[key] == True:
+                    export_classes[key] = item
+
+
+            accuracy = self.export_accuracy.value()
+
+            if self.filter_accuracy_btn.isChecked():
+                filtering = True
+            else:
+                filtering = False
+
+            nanotron.export_locs(locs = self.locs, path = self.path, classes=self.classes, filtering=filtering,
+            accuracy = accuracy, regroup = True)
 
 
 def main():
