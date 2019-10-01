@@ -77,7 +77,8 @@ class Worker(QtCore.QThread):
         self.locs = lib.append_to_rec(self.locs, p_locs['prediction'],'prediction')
         self.locs = lib.append_to_rec(self.locs, p_locs['score'],'score')
 
-        self.finish.emit(self.locs)
+        self.finished.emit(self.locs)
+
 
 
 class ParametersDialog(QtWidgets.QDialog):
@@ -283,7 +284,6 @@ class Window(QtWidgets.QMainWindow):
 
     def on_finished(self, locs):
         self.locs = locs.copy()
-        self.window.status_bar.showMessage('Finished {}'.format(finished))
         self.predicting = False
 
     def on_progress(self, pick, total_picks):
