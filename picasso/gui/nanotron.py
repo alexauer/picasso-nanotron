@@ -17,6 +17,7 @@ import numpy as np
 import joblib
 import yaml
 from PyQt5 import QtCore, QtGui, QtWidgets
+from PyQt5.QtGui import QIcon
 
 from .. import io, lib, render, nanotron
 
@@ -172,8 +173,8 @@ class Window(QtWidgets.QMainWindow):
         self.setWindowTitle("Picasso: Nanotron")
         self.resize(768, 512)
         this_directory = os.path.dirname(os.path.realpath(__file__))
-        icon_path = os.path.join(this_directory, "icons", "nanotron.ico")
-        icon = QtGui.QIcon(icon_path)
+        self.icon_path = os.path.join(this_directory, "icons", "nanotron.ico")
+        icon = QtGui.QIcon(self.icon_path)
         self.setWindowIcon(icon)
         self.setAcceptDrops(True)
         self.predicting = False
@@ -220,6 +221,7 @@ class Window(QtWidgets.QMainWindow):
         # self.model_load_btn.clicked.connect(self.load_model)
 
         self.class_box = QtWidgets.QGroupBox("Export Structures")
+        self.classbox_grid = QtWidgets.QVBoxLayout(self.class_box)
         self.update_class_buttons()
         self.classbox_grid.addStretch(1)
 
@@ -477,6 +479,9 @@ class Window(QtWidgets.QMainWindow):
 def main():
 
     app = QtWidgets.QApplication(sys.argv)
+    this_directory = os.path.dirname(os.path.realpath(__file__))
+    icon_path = os.path.join(this_directory, "icons", "nanotron.ico")
+    app.setWindowIcon(QIcon(icon_path))
     window = Window()
     window.show()
 
