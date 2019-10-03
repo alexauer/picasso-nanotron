@@ -14,6 +14,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
+from sklearn.neural_network import MLPClassifier
 import joblib
 import yaml
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -50,13 +51,49 @@ class Trainer(QtCore.QThread):
         self.pick_radius = pick_radius
         self.oversampling = oversampling
 
-    def train(self):
+    def train(self, files, classes, pick_radius, oversampling):
 
-        return
+        X_files = []
+        Y_files = []
+
+        for file in files:
+
+            X_data, Y_label = nanotron.prepare_data(file, classes=classes[file],
+                                                    pick_radius=self.pick_radius,
+                                                    oversampling=self.oversampling,
+                                                    alpha=10, bg=1, export=False)
+            X_files.append(X_data)
+            Y_files.append(Y_label)
+
+        X_train, Y_train = self.combine_data_sets(X_files, Y_files)
+
+        self.mlp = MLPClassifier(hidden_layer_sizes=(1000,), activation='relu',
+                                 max_iter=100, alpha=0.01,
+                                 solver='adam', verbose=False, shuffle=True,
+                                 tol=1e-4, random_state=1,
+                                 learning_rate_init=.1)
+
+        self.mlp.fit(X_train, Y_train)
+        print("Training set score: %f" % self.mlp.score(X_train, Y_train))
+        print("Training set loss: %f" % self.mlp.loss_)
+
+        return self.mlp
 
     def validate(self):
 
         return
+
+    def combine_data_sets(self, X_files, Y_files):
+
+        X = []
+        Y = []
+        for img in X_files:
+            X += img
+
+        for label in Y_files:
+            X += label
+
+        return X, Y
 
 
 class Predicter(QtCore.QThread):
@@ -73,7 +110,7 @@ class Predicter(QtCore.QThread):
 
     def run(self):
 
-        img_shape = int(2 * self.pick_radius * self.oversampling)
+
         self.prediction = np.zeros(len(np.unique(self.locs['group'])),
                                    dtype=[('group', 'u4'),
                                    ('prediction', 'i4'), ('score', 'f4')])
@@ -90,7 +127,6 @@ class Predicter(QtCore.QThread):
             pred, pred_proba = nanotron.predict_structure(mlp=self.model,
                                                           locs=self.locs,
                                                           pick=pick,
-                                                          img_shape=img_shape,
                                                           pick_radius=self.pick_radius,
                                                           oversampling=self.oversampling)
 
@@ -129,7 +165,7 @@ class train_dialog(QtWidgets.QDialog):
         self.choose_files_n.setValue(0)
         self.choose_files_n.setKeyboardTracking(False)
 
-        file_slots_btn = QtWidgets.QPushButton("Generate Files")
+        file_slots_btn = QtWidgets.QPushButton("Generate Data Sets")
         file_slots_btn.clicked.connect(self.update_train_files)
         choose_class_grid.addWidget(QtWidgets.QLabel("Classes:"), 0, 0)
         choose_class_grid.addWidget(self.choose_files_n, 0, 1)
@@ -212,11 +248,13 @@ class train_dialog(QtWidgets.QDialog):
 
             for file in range(self.choose_files_n.value()):
 
+                f_buttons = []
+
                 c = QtWidgets.QLabel('{}'.format(file))
                 self.train_files_grid.addWidget(c, file, 0)
 
                 f = QtWidgets.QPushButton("Load File")
-                f.clicked.connect(self.load_train_file())
+                # f.clicked.connect(self.load_train_file())
                 self.train_files_grid.addWidget(f, file, 1)
 
                 la = QtWidgets.QLabel("Name:".format(file))
@@ -334,6 +372,7 @@ class Window(QtWidgets.QMainWindow):
         load_model_action.setShortcut("Ctrl+L")
         load_model_action.triggered.connect(self.load_model)
         train_model_action = tools_menu.addAction("Train Model")
+        train_model_action.setShortcut("Ctrl+T")
         train_model_action.triggered.connect(self.train_dialog.show)
 
         self.status_bar = self.statusBar()
