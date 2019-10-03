@@ -38,10 +38,31 @@ def render_hist(x, y, oversampling, t_min, t_max):
     return len(x), image
 
 
-class Worker(QtCore.QThread):
+class Trainer(QtCore.QThread):
 
-    progressMade = QtCore.pyqtSignal(int, int)
-    finished = QtCore.pyqtSignal(np.recarray)
+    trainings_made = QtCore.pyqtSignal(int, int)
+    training_finished = QtCore.pyqtSignal(np.recarray)
+
+    def __init__(self, mlp, locs, pick_radius, oversampling, parent=None):
+        super().__init__()
+        self.model = mlp
+        self.locs = locs.copy()
+        self.pick_radius = pick_radius
+        self.oversampling = oversampling
+
+    def train(self):
+
+        return
+
+    def validate(self):
+
+        return
+
+
+class Predicter(QtCore.QThread):
+
+    predictions_made = QtCore.pyqtSignal(int, int)
+    prediction_finished = QtCore.pyqtSignal(np.recarray)
 
     def __init__(self, mlp, locs, pick_radius, oversampling, parent=None):
         super().__init__()
@@ -64,7 +85,7 @@ class Worker(QtCore.QThread):
         for id, pick in enumerate(tqdm(self.prediction['group'],
                                   desc='Predict')):
 
-            self.progressMade.emit(pick, len_groups)
+            self.predictions_made.emit(pick, len_groups)
 
             pred, pred_proba = nanotron.predict_structure(mlp=self.model,
                                                           locs=self.locs,
@@ -80,31 +101,143 @@ class Worker(QtCore.QThread):
         self.locs = lib.append_to_rec(self.locs, p_locs['prediction'], 'prediction')
         self.locs = lib.append_to_rec(self.locs, p_locs['score'], 'score')
 
-        self.finished.emit(self.locs)
+        self.prediction_finished.emit(self.locs)
 
 
-class ParametersDialog(QtWidgets.QDialog):
+class train_dialog(QtWidgets.QDialog):
     def __init__(self, window):
         super().__init__(window)
         self.window = window
-        self.setWindowTitle("Parameters")
+        self.setWindowTitle("Train Model")
         self.setModal(False)
         grid = QtWidgets.QGridLayout(self)
+        self.file_slots_generated = False
+        self.data_prepared = False
 
-        grid.addWidget(QtWidgets.QLabel("Oversampling:"), 0, 0)
-        self.oversampling = QtWidgets.QDoubleSpinBox()
-        self.oversampling.setRange(1, 200)
-        self.oversampling.setValue(DEFAULT_OVERSAMPLING)
-        self.oversampling.setDecimals(1)
-        self.oversampling.setKeyboardTracking(False)
-        self.oversampling.valueChanged.connect(self.window.update_image)
-        grid.addWidget(self.oversampling, 0, 1)
+        # predict_box = QtWidgets.QGroupBox("Predict")
+        # predict_grid = QtWidgets.QVBoxLayout(predict_box)
+        # self.predict_btn = QtWidgets.QPushButton("Predict")
+        # self.predict_btn.clicked.connect(self.predict)
+        # predict_grid.addWidget(self.predict_btn)
 
-        grid.addWidget(QtWidgets.QLabel("Iterations:"), 1, 0)
+        progress_bar = QtWidgets.QProgressBar(self)
+
+        choose_class_box = QtWidgets.QGroupBox("Number of Classes")
+        choose_class_grid = QtWidgets.QGridLayout(choose_class_box)
+        self.choose_files_n = QtWidgets.QSpinBox()
+        self.choose_files_n.setRange(1, 6)
+        self.choose_files_n.setValue(0)
+        self.choose_files_n.setKeyboardTracking(False)
+
+        file_slots_btn = QtWidgets.QPushButton("Generate Files")
+        file_slots_btn.clicked.connect(self.update_train_files)
+        choose_class_grid.addWidget(QtWidgets.QLabel("Classes:"), 0, 0)
+        choose_class_grid.addWidget(self.choose_files_n, 0, 1)
+        choose_class_grid.addWidget(file_slots_btn, 0, 2)
+
+        train_files_box = QtWidgets.QGroupBox("Training Files")
+        self.train_files_grid = QtWidgets.QGridLayout(train_files_box)
+
+        prepare_data_btn = QtWidgets.QPushButton("Prepare Data")
+        prepare_data_btn.clicked.connect(self.prepare_data)
+
+        perceptron_box = QtWidgets.QGroupBox("Perceptron")
+        perceptron_grid = QtWidgets.QGridLayout(perceptron_box)
+        perceptron_grid.addWidget(QtWidgets.QLabel("Nodes:"), 0, 0)
+
+        nodes = QtWidgets.QSpinBox()
+        nodes.setRange(1, 1000)
+        nodes.setValue(100)
+        nodes.setKeyboardTracking(False)
+        perceptron_grid.addWidget(nodes, 0, 1)
+
+        perceptron_grid.addWidget(QtWidgets.QLabel("Solver:"), 2, 0)
+        activation_ft = QtWidgets.QComboBox()
+        activation_ft.addItems(['adam', 'lbfgs', 'sgd'])
+        perceptron_grid.addWidget(activation_ft, 2, 1)
+
+        perceptron_grid.addWidget(QtWidgets.QLabel("Activation:"), 3, 0)
+        activation_ft = QtWidgets.QComboBox()
+        activation_ft.addItems(['relu', 'identity', 'logistic', 'tanh'])
+        perceptron_grid.addWidget(activation_ft, 3, 1)
+
+        train_parameter_box = QtWidgets.QGroupBox("Training")
+        train_parameter_grid = QtWidgets.QGridLayout(train_parameter_box)
+
+        train_parameter_grid.addWidget(QtWidgets.QLabel("Iterations:"), 0, 0)
         self.iterations = QtWidgets.QSpinBox()
-        self.iterations.setRange(0, 1e7)
-        self.iterations.setValue(10)
-        grid.addWidget(self.iterations, 1, 1)
+        self.iterations.setRange(0, 1e4)
+        self.iterations.setValue(200)
+        train_parameter_grid.addWidget(self.iterations, 0, 1)
+
+        train_parameter_grid.addWidget(QtWidgets.QLabel("Learning Rate:"), 1, 0)
+        self.learing_rate = QtWidgets.QDoubleSpinBox()
+        self.learing_rate.setRange(0, 10)
+        self.learing_rate.setValue(0.01)
+        self.learing_rate.setSingleStep(0.01)
+        self.learing_rate.setDecimals(4)
+        train_parameter_grid.addWidget(self.learing_rate, 1, 1)
+
+        train_btn = QtWidgets.QPushButton("Train")
+        train_btn.clicked.connect(self.train)
+        validate_btn = QtWidgets.QPushButton("Validate")
+        validate_btn.clicked.connect(self.validate)
+
+        progress_label = QtWidgets.QLabel("")
+        progress_label.setAlignment(QtCore.Qt.AlignCenter)
+
+        grid.addWidget(choose_class_box, 0, 0, 1, 1)
+        grid.addWidget(train_files_box, 1, 0, 7, 1)
+        grid.addWidget(prepare_data_btn, 8, 0, 1, 1)
+
+        grid.addWidget(perceptron_box, 0, 1, 3, 1)
+        grid.addWidget(train_parameter_box, 4, 1,)
+        grid.addWidget(train_btn, 5, 1, 1, 2)
+        grid.addWidget(validate_btn, 6, 1, 1, 2)
+        grid.addWidget(progress_label, 7, 1, 1, 2)
+        grid.addWidget(progress_bar, 8, 1, 1, 2)
+
+    def train(self):
+        # Do
+        return
+
+    def validate(self):
+        # Do
+        return
+
+    def update_train_files(self):
+
+        if not self.file_slots_generated:
+            self.file_slots_generated = True
+
+            for file in range(self.choose_files_n.value()):
+
+                c = QtWidgets.QLabel('{}'.format(file))
+                self.train_files_grid.addWidget(c, file, 0)
+
+                f = QtWidgets.QPushButton("Load File")
+                f.clicked.connect(self.load_train_file())
+                self.train_files_grid.addWidget(f, file, 1)
+
+                la = QtWidgets.QLabel("Name:".format(file))
+                self.train_files_grid.addWidget(la, file, 2)
+
+                id = QtWidgets.QLineEdit(self)
+                id.move(20, 20)
+                id.resize(500, 40)
+                id.setMaxLength(10)
+                self.train_files_grid.addWidget(id, file, 3)
+
+        return
+
+    def load_train_file(self):
+        # Do
+        print('yay')
+        return
+
+    def prepare_data(self):
+
+        return
 
 
 class View(QtWidgets.QLabel):
@@ -183,21 +316,25 @@ class Window(QtWidgets.QMainWindow):
 
         # self.parameters_dialog = ParametersDialog(self)
         menu_bar = self.menuBar()
+        self.train_dialog = train_dialog(self)
 
         file_menu = menu_bar.addMenu("File")
         open_action = file_menu.addAction("Open")
         open_action.setShortcut(QtGui.QKeySequence.Open)
         open_action.triggered.connect(self.open)
         file_menu.addAction(open_action)
+        export_action = file_menu.addAction("Save")
+        export_action.setShortcut(QtGui.QKeySequence.Save)
+        export_action.triggered.connect(self.export)
+        file_menu.addAction(export_action)
 
-        #Training menu #TODO
-        # process_menu = menu_bar.addMenu("Training")
-        # parameters_action = process_menu.addAction("Parameters")
-        # parameters_action.setShortcut("Ctrl+P")
-        # parameters_action.triggered.connect(self.parameters_dialog.show)
-        # average_action = process_menu.addAction("Average")
-        # average_action.setShortcut("Ctrl+A")
-        # average_action.triggered.connect(self.view.average)
+        # Training menu #TODO
+        tools_menu = menu_bar.addMenu("Tools")
+        load_model_action = tools_menu.addAction("Load Model")
+        load_model_action.setShortcut("Ctrl+L")
+        load_model_action.triggered.connect(self.load_model)
+        train_model_action = tools_menu.addAction("Train Model")
+        train_model_action.triggered.connect(self.train_dialog.show)
 
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Load localization file.")
@@ -263,21 +400,27 @@ class Window(QtWidgets.QMainWindow):
 
     def predict(self):
 
-        if (self.predicting is False) and (self.model_loaded is True):
+        if 'self.locs' not in locals():
+            msgBox = QtWidgets.QMessageBox(self)
+            msgBox.setWindowTitle("Error")
+            msgBox.setText("No localization data loaded.")
+            msgBox.exec_()
+        else:
+            if (self.predicting is False) and (self.model_loaded is True):
 
-            self.predicting = True
+                self.predicting = True
 
-            self.oversampling = self.model_info["Oversampling"]
-            self.pick_diameter = self.model_info["Pick Diameter"]
-            self.pick_radius = self.pick_diameter / 2
+                self.oversampling = self.model_info["Oversampling"]
+                self.pick_diameter = self.model_info["Pick Diameter"]
+                self.pick_radius = self.pick_diameter / 2
 
-            self.thread = Worker(
-                self.model, self.locs, self.pick_radius, self.oversampling,
-            )
-            self.thread.progressMade.connect(self.on_progress)
+                self.thread = Predicter(
+                    self.model, self.locs, self.pick_radius, self.oversampling,
+                )
+                self.thread.predictions_made.connect(self.on_progress)
 
-            self.thread.finished.connect(self.on_finished)
-            self.thread.start()
+                self.thread.prediction_finished.connect(self.on_finished)
+                self.thread.start()
 
     def on_finished(self, locs):
         self.locs = locs.copy()
@@ -423,57 +566,66 @@ class Window(QtWidgets.QMainWindow):
 
     def export(self):
 
+        if 'self.locs' not in locals():
+            msgBox = QtWidgets.QMessageBox(self)
+            msgBox.setWindowTitle("Error")
+            msgBox.setText("No localization data loaded.")
+            msgBox.exec_()
+            return
+
         if not hasattr(self.locs, "prediction"):
             msgBox = QtWidgets.QMessageBox(self)
             msgBox.setWindowTitle("Error")
             msgBox.setText("No predictions. Predict first.")
             msgBox.exec_()
-        else:
-            export_map = []
-            export_classes = {}
+            return
 
-            checks = (self.classbox_grid.itemAt(i) for i in range(self.classbox_grid.count()))
-            for btn in checks:
+        export_map = []
+        export_classes = {}
 
-                if isinstance(btn, QtWidgets.QWidgetItem):
-                    if btn.widget().checkState():
-                        export_map.append(True)
-                    else:
-                        export_map.append(False)
+        checks = (self.classbox_grid.itemAt(i) for i in range(self.classbox_grid.count()))
+        for btn in checks:
 
-            for key, item in self.classes.items():
-                if export_map[key] is True:
-                    export_classes[key] = item
+            if isinstance(btn, QtWidgets.QWidgetItem):
+                if btn.widget().checkState():
+                    export_map.append(True)
+                else:
+                    export_map.append(False)
 
-            all_picks = len(np.unique(self.locs['group']))
-            accuracy = self.export_accuracy.value()
+        for key, item in self.classes.items():
+            if export_map[key] is True:
+                export_classes[key] = item
 
-            if self.filter_accuracy_btn.isChecked():
-                print('Probability filter set to {:4}%'.format(accuracy*100))
-                self.locs = self.locs[self.locs['score'] >= accuracy]
-                dropped_picks = all_picks - len(np.unique(self.locs['group']))
-                print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
-                self.nanotron_log['Probability'] = accuracy
+        all_picks = len(np.unique(self.locs['group']))
+        accuracy = self.export_accuracy.value()
 
-            for prediction, name in export_classes.items():
+        if self.filter_accuracy_btn.isChecked():
+            print('Probability filter set to {:4}%'.format(accuracy*100))
+            self.locs = self.locs[self.locs['score'] >= accuracy]
+            dropped_picks = all_picks - len(np.unique(self.locs['group']))
+            print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
+            self.nanotron_log['Probability'] = accuracy
 
-                filtered_locs = self.locs[self.locs['prediction'] == prediction]
-                n_groups = np.unique(filtered_locs['group'])
-                n_new_groups = np.arange(0, len(n_groups), 1)
-                regroup_dict = dict(zip(n_groups, n_new_groups))
-                regroup_map = [regroup_dict[_] for _ in filtered_locs['group']]
-                filtered_locs['group'] = regroup_map
-                print('Regrouped datatset {} to {} picks.'.format(name, len(n_groups)))
+        for prediction, name in export_classes.items():
 
-                nanotron_info = self.nanotron_log.copy()
-                nanotron_info.update({"Generated by": "Picasso Nanotron"})
-                info = self.info + [nanotron_info]
+            filtered_locs = self.locs[self.locs['prediction'] == prediction]
+            n_groups = np.unique(filtered_locs['group'])
+            n_new_groups = np.arange(0, len(n_groups), 1)
+            regroup_dict = dict(zip(n_groups, n_new_groups))
+            regroup_map = [regroup_dict[_] for _ in filtered_locs['group']]
+            filtered_locs['group'] = regroup_map
+            print('Regrouped datatset {} to {} picks.'.format(name, len(n_groups)))
 
-                out_path = os.path.splitext(self.path)[0] +'_'+name.replace(" ", "_").lower()+".hdf5"
-                io.save_locs(out_path, filtered_locs, info)
+            nanotron_info = self.nanotron_log.copy()
+            nanotron_info.update({"Generated by": "Picasso Nanotron"})
+            info = self.info + [nanotron_info]
 
-            print('Export of all predicted datasets finished.')
-            self.status_bar.showMessage("{} files exported.".format(len(export_classes.items())))
+            out_filename = '_' + name.replace(" ", "_").lower() + ".hdf5"
+            out_path = os.path.splitext(self.path)[0] + out_filename
+            io.save_locs(out_path, filtered_locs, info)
+
+        print('Export of all predicted datasets finished.')
+        self.status_bar.showMessage("{} files exported.".format(len(export_classes.items())))
 
 
 def main():

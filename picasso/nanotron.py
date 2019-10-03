@@ -9,12 +9,14 @@
 """
 
 import numpy as np
+import matplotlib.pyplot as plt
 from tqdm import tqdm as tqdm
 
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score
 
-from . import io, render, lib
+from . import render
+
 
 def prepare_img(img, img_shape, alpha=1, bg=0):
 
@@ -26,13 +28,15 @@ def prepare_img(img, img_shape, alpha=1, bg=0):
 
     return img
 
+
 def roi_to_img(locs, pick, radius, oversampling):
 
     # Isolate locs from pick
     pick_locs = []
     pick_locs = locs[(locs.group == pick)]
 
-    radius -=0.001 #dirty method to avoid floating point errors with render
+    # dirty method to avoid floating point errors with render
+    radius -= 0.001
 
     # Calculate viewport
     x_min = np.mean(pick_locs.x) - radius
@@ -40,9 +44,10 @@ def roi_to_img(locs, pick, radius, oversampling):
     y_min = np.mean(pick_locs.y) - radius
     y_max = np.mean(pick_locs.y) + radius
 
-    viewport =  (y_min, x_min), (y_max, x_max)
+    viewport = (y_min, x_min), (y_max, x_max)
 
-    if False: #for debugging
+    # for debugging
+    if False:
         print("mean x: {}".format(np.mean(pick_locs.x)))
         print('length x: {}'.format(x_max - x_min))
         print("mean y: {}".format(np.mean(pick_locs.y)))
@@ -51,11 +56,15 @@ def roi_to_img(locs, pick, radius, oversampling):
         print('viewport: {}'.format(viewport))
 
     # Render locs with Picasso render function
-    len_x, pick_img = render.render(pick_locs, viewport = viewport, oversampling=oversampling, blur_method='smooth')
-
+    len_x, pick_img = render.render(pick_locs, viewport=viewport,
+                                    oversampling=oversampling,
+                                    blur_method='smooth')
     return pick_img
 
-def prepare_data(locs, identification, picks_radius, oversampling, img_shape, alpha=10, bg=1, export=False):
+
+def prepare_data(locs, identification, pick_radius,
+                 oversampling, img_shape, alpha=10,
+                 bg=1, export=False):
 
     data = []
     label = []
@@ -64,7 +73,7 @@ def prepare_data(locs, identification, picks_radius, oversampling, img_shape, al
 
         pick_img = roi_to_img(locs, pick, radius=pick_radius, oversampling=oversampling)
 
-        if export == True and pick < 10:
+        if export is True and pick < 10:
             filename = 'id' + str(identification) + '-' + str(pick)
             plt.imsave('./img/' + filename + '.png', (alpha*pick_img-bg), cmap='Greys', vmax=10)
 
@@ -82,9 +91,8 @@ def prepare_data(locs, identification, picks_radius, oversampling, img_shape, al
 #
 #     return np.asarray(x), np.asarray(y)
 
-def predict_structure(mlp, locs, pick, img_shape, pick_radius, oversampling):
 
-    # Iterate through groups, render, predict and save append to according DataFrame
+def predict_structure(mlp, locs, pick, img_shape, pick_radius, oversampling):
 
     img = roi_to_img(locs, pick=pick, radius=pick_radius, oversampling=oversampling)
     img = prepare_img(img, img_shape=img_shape, alpha=10, bg=1)
