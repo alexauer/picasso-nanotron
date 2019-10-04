@@ -39,33 +39,21 @@ def render_hist(x, y, oversampling, t_min, t_max):
     return len(x), image
 
 
-class Trainer(QtCore.QThread):
+# class Trainer(QtCore.QThread):
+class Trainer():
 
-    trainings_made = QtCore.pyqtSignal(int, int)
-    training_finished = QtCore.pyqtSignal(np.recarray)
+    # trainings_made = QtCore.pyqtSignal(int, int)
+    # training_finished = QtCore.pyqtSignal(np.recarray)
+    data_prepared = QtCore.pyqtSignal(int, int)
 
-    def __init__(self, mlp, locs, pick_radius, oversampling, parent=None):
+    def __init__(self, mlp, locs, classes, pick_radius, oversampling, parent=None):
         super().__init__()
         self.model = mlp
         self.locs = locs.copy()
         self.pick_radius = pick_radius
         self.oversampling = oversampling
 
-    def train(self, files, classes, pick_radius, oversampling):
-
-        X_files = []
-        Y_files = []
-
-        for file in files:
-
-            X_data, Y_label = nanotron.prepare_data(file, classes=classes[file],
-                                                    pick_radius=self.pick_radius,
-                                                    oversampling=self.oversampling,
-                                                    alpha=10, bg=1, export=False)
-            X_files.append(X_data)
-            Y_files.append(Y_label)
-
-        X_train, Y_train = self.combine_data_sets(X_files, Y_files)
+    def train(self, X_train, Y_train):
 
         self.mlp = MLPClassifier(hidden_layer_sizes=(1000,), activation='relu',
                                  max_iter=100, alpha=0.01,
@@ -85,15 +73,34 @@ class Trainer(QtCore.QThread):
 
     def combine_data_sets(self, X_files, Y_files):
 
-        X = []
-        Y = []
-        for img in X_files:
-            X += img
+        X = [img for xfile in X_files for img in xfile]
+        Y = [label for yfile in X_files for label in yfile]
 
-        for label in Y_files:
-            X += label
+        # for img in X_files:
+        #     X += img
+        #
+        # for label in Y_files:
+        #     X += label
 
         return X, Y
+
+    def prepare_data(self, loc_files, classes, pick_radius, oversampling):
+
+        X_files = []
+        Y_files = []
+
+        for locs in loc_files:
+
+            X_data, Y_label = nanotron.prepare_data(locs[1], classes=classes[locs[0]],
+                                                    pick_radius=self.pick_radius,
+                                                    oversampling=self.oversampling,
+                                                    alpha=10, bg=1, export=False)
+            X_files.append(X_data)
+            Y_files.append(Y_label)
+
+        X_train, Y_train = self.combine_data_sets(X_files, Y_files)
+
+        return X_train, Y_train
 
 
 class Predicter(QtCore.QThread):
@@ -149,7 +156,11 @@ class train_dialog(QtWidgets.QDialog):
         grid = QtWidgets.QGridLayout(self)
         self.file_slots_generated = False
         self.data_prepared = False
-
+        self.training_files = {}
+        self.classes = {}
+        self.classes_name = []
+        self.f_btns = []
+        self.pick_radii = {}
         # predict_box = QtWidgets.QGroupBox("Predict")
         # predict_grid = QtWidgets.QVBoxLayout(predict_box)
         # self.predict_btn = QtWidgets.QPushButton("Predict")
@@ -160,19 +171,32 @@ class train_dialog(QtWidgets.QDialog):
 
         choose_class_box = QtWidgets.QGroupBox("Number of Classes")
         choose_class_grid = QtWidgets.QGridLayout(choose_class_box)
-        self.choose_files_n = QtWidgets.QSpinBox()
-        self.choose_files_n.setRange(1, 6)
-        self.choose_files_n.setValue(0)
-        self.choose_files_n.setKeyboardTracking(False)
+        self.choose_n_files = QtWidgets.QSpinBox()
+        self.choose_n_files.setRange(1, 6)
+        self.choose_n_files.setValue(0)
+        self.choose_n_files.setKeyboardTracking(False)
 
-        file_slots_btn = QtWidgets.QPushButton("Generate Data Sets")
+        file_slots_btn = QtWidgets.QPushButton("Generate Data Set")
         file_slots_btn.clicked.connect(self.update_train_files)
         choose_class_grid.addWidget(QtWidgets.QLabel("Classes:"), 0, 0)
-        choose_class_grid.addWidget(self.choose_files_n, 0, 1)
+        choose_class_grid.addWidget(self.choose_n_files, 0, 1)
         choose_class_grid.addWidget(file_slots_btn, 0, 2)
 
         train_files_box = QtWidgets.QGroupBox("Training Files")
         self.train_files_grid = QtWidgets.QGridLayout(train_files_box)
+
+
+        train_img_box = QtWidgets.QGroupBox("Image Parameter")
+        self.train_img_grid = QtWidgets.QHBoxLayout(train_img_box)
+        self.oversampling_box = QtWidgets.QSpinBox()
+        self.oversampling_box.setRange(1, 200)
+        self.oversampling_box.setValue(50)
+        self.export_img = QtWidgets.QCheckBox("Export Image Subset")
+        self.export_img.setChecked(False)
+
+        self.train_img_grid.addWidget(QtWidgets.QLabel("Oversampling:"), 0)
+        self.train_img_grid.addWidget(self.oversampling_box, 1)
+        self.train_img_grid.addWidget(self.export_img, 2)
 
         prepare_data_btn = QtWidgets.QPushButton("Prepare Data")
         prepare_data_btn.clicked.connect(self.prepare_data)
@@ -216,22 +240,25 @@ class train_dialog(QtWidgets.QDialog):
 
         train_btn = QtWidgets.QPushButton("Train")
         train_btn.clicked.connect(self.train)
-        validate_btn = QtWidgets.QPushButton("Validate")
+        # train_btn.setVisible(False)
+        validate_btn = QtWidgets.QPushButton("Show Learning Curve")
         validate_btn.clicked.connect(self.validate)
+        # validate_btn.setVisible(False)
 
         progress_label = QtWidgets.QLabel("")
         progress_label.setAlignment(QtCore.Qt.AlignCenter)
 
         grid.addWidget(choose_class_box, 0, 0, 1, 1)
         grid.addWidget(train_files_box, 1, 0, 7, 1)
-        grid.addWidget(prepare_data_btn, 8, 0, 1, 1)
+        grid.addWidget(train_img_box, 8, 0, 1, 1)
+        grid.addWidget(prepare_data_btn, 9, 0, 1, 1)
 
         grid.addWidget(perceptron_box, 0, 1, 3, 1)
         grid.addWidget(train_parameter_box, 4, 1,)
         grid.addWidget(train_btn, 5, 1, 1, 2)
         grid.addWidget(validate_btn, 6, 1, 1, 2)
-        grid.addWidget(progress_label, 7, 1, 1, 2)
-        grid.addWidget(progress_bar, 8, 1, 1, 2)
+        grid.addWidget(progress_label, 7, 1, 2, 2)
+        grid.addWidget(progress_bar, 9, 1, 1, 2)
 
     def train(self):
         # Do
@@ -246,16 +273,15 @@ class train_dialog(QtWidgets.QDialog):
         if not self.file_slots_generated:
             self.file_slots_generated = True
 
-            for file in range(self.choose_files_n.value()):
+            for file in range(self.choose_n_files.value()):
 
-                f_buttons = []
-
-                c = QtWidgets.QLabel('{}'.format(file))
+                c = QtWidgets.QLabel('{}:'.format(file))
                 self.train_files_grid.addWidget(c, file, 0)
 
-                f = QtWidgets.QPushButton("Load File")
-                # f.clicked.connect(self.load_train_file())
-                self.train_files_grid.addWidget(f, file, 1)
+                self.f_btn = QtWidgets.QPushButton("Load File", self)
+                self.f_btn.clicked.connect(lambda _, fi=file: self.load_train_file(fi))
+                self.train_files_grid.addWidget(self.f_btn, file, 1)
+                self.f_btns.append(self.f_btn)
 
                 la = QtWidgets.QLabel("Name:".format(file))
                 self.train_files_grid.addWidget(la, file, 2)
@@ -265,16 +291,91 @@ class train_dialog(QtWidgets.QDialog):
                 id.resize(500, 40)
                 id.setMaxLength(10)
                 self.train_files_grid.addWidget(id, file, 3)
+                self.classes_name.append(id)
 
         return
 
-    def load_train_file(self):
-        # Do
-        print('yay')
-        return
+
+    def load_train_file(self, file):
+
+        path, exe = QtWidgets.QFileDialog.getOpenFileName(
+            self, "Open training localizations", filter="*.hdf5"
+        )
+        if path:
+            try:
+                locs, info = io.load_locs(path, qt_parent=self)
+                self.pick_radii[file] = self.parse_pick_radius(info)
+
+            except io.NoMetadataFileError:
+                return
+
+        if not hasattr(locs, "group"):
+            msgBox = QtWidgets.QMessageBox(self)
+            msgBox.setWindowTitle("Error")
+            msgBox.setText(
+                ("Datafile does not contain group information."
+                "Please load file with picked localizations.")
+            )
+            msgBox.exec_()
+        else:
+            self.training_files[(file)] = locs
+            self.f_btns[file].setText("Loaded")
+            self.f_btns[file].setEnabled(False)
+
+
+    # def parse_pick_radius(self, info):
+    #     for file in info:
+    #         print(file)
+    #         try:
+    #             diameter = file["Pick Diameter"]
+    #         except Exception as e:
+    #             return
+    #
+    #             radius = diameter / 2
+    #
+    #     return radius
+
+
+    def check_set(self):
+
+        n_files = self.choose_n_files.value()
+        n_datasets = len(self.training_files)
+
+        passed = False
+        n_ids = 0 # not very elegant
+
+        for id, txt in enumerate(self.classes_name):
+            name = txt.text().strip()
+            if name:
+                self.classes[id] = name
+                n_ids += 1
+
+        if (n_files == n_ids) and (n_files == n_datasets):
+            passed = True
+
+        return passed
 
     def prepare_data(self):
 
+        if self.check_set():
+
+            # Get the largest pick radius
+            # self.pick_radius = max(self.pick_radii, key = lambda x: self.pick_radii.get(x))
+            self.pick_radius = 0.4
+            self.oversampling = self.oversampling_box.value()
+
+            self.train_thread = Trainer(
+                self.training_files, self.classes, self.pick_radius, self.oversampling
+            )
+            # train_thread.predictions_made.connect(self.on_progress)
+
+            # train_thread.prediction_finished.connect(self.on_finished)
+            # train_thread.start(self.prepare_data)
+        else:
+            msgBox = QtWidgets.QMessageBox(self)
+            msgBox.setWindowTitle("Error")
+            msgBox.setText("No all data sets loaded or name defined.")
+            msgBox.exec_()
         return
 
 
@@ -560,15 +661,19 @@ class Window(QtWidgets.QMainWindow):
     def load_default_model(self):
 
         path = os.getcwd() + DEFAULT_MODEL_PATH
+        print(path)
         try:
             self.model = joblib.load(path)
             self.nanotron_log['Model Path'] = path
+            print("Defaul model loaded.")
         except Exception:
-            raise ValueError("No model file loaded.")
+            print("Default model not loaded.")
+            self.status_bar.showMessage("Load model.")
+            # raise ValueError("Default model not loaded.")
 
         try:
             with open(path[:-3]+'yaml', "r") as f:
-                self.model_info = yaml.load(f, Loader=yaml.FullLoader)
+                self.model_info = yaml.load(f)
                 self.classes = []
                 self.classes = self.model_info["Classes"]
                 self.model_loaded = True
@@ -589,7 +694,7 @@ class Window(QtWidgets.QMainWindow):
 
             try:
                 with open(path[:-3]+'yaml', "r") as f:
-                    self.model_info = yaml.load(f, Loader=yaml.FullLoader)
+                    self.model_info = yaml.load(f)
                     self.classes = []
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
