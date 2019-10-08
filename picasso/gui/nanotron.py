@@ -452,6 +452,7 @@ class Window(QtWidgets.QMainWindow):
         self.predicting = False
         self.model_loaded = False
         self.nanotron_log = {}
+        self.classes = []
 
         # self.parameters_dialog = ParametersDialog(self)
         menu_bar = self.menuBar()
@@ -661,7 +662,7 @@ class Window(QtWidgets.QMainWindow):
     def load_default_model(self):
 
         path = os.getcwd() + DEFAULT_MODEL_PATH
-        print(path)
+
         try:
             self.model = joblib.load(path)
             self.nanotron_log['Model Path'] = path
@@ -698,15 +699,27 @@ class Window(QtWidgets.QMainWindow):
                     self.classes = []
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
+                    self.update_class_buttons()
             except io.NoMetadataFileError:
                 return
 
+    def clearLayout(self, layout):
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+
     def update_class_buttons(self):
 
+        self.clearLayout(self.classbox_grid)
         for id, name in self.classes.items():
+
             c = QtWidgets.QCheckBox(name)
             c.setChecked(True)
             self.classbox_grid.addWidget(c)
+
+        self.classbox_grid.addStretch(1)
 
     def export(self):
 
