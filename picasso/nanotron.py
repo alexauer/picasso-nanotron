@@ -33,8 +33,7 @@ def roi_to_img(locs, pick, radius, oversampling):
 
     # Isolate locs from pick
     pick_locs = []
-    pick_locs = locs[(locs.group == pick)]
-
+    pick_locs = locs[(locs["group"] == pick)]
     # dirty method to avoid floating point errors with render
     radius -= 0.001
 
@@ -59,28 +58,30 @@ def roi_to_img(locs, pick, radius, oversampling):
     len_x, pick_img = render.render(pick_locs, viewport=viewport,
                                     oversampling=oversampling,
                                     blur_method='smooth')
+
     return pick_img
 
 
-def prepare_data(locs, identification, pick_radius,
-                 oversampling, img_shape, alpha=10,
+def prepare_data(locs, label, pick_radius,
+                 oversampling, alpha=10,
                  bg=1, export=False):
 
+    img_shape = int(2 * pick_radius * oversampling)
     data = []
-    label = []
+    labels = []
 
-    for pick in tqdm(range(locs.group.max()), desc='Prepare class '+str(identification)):
+    for pick in tqdm(range(locs.group.max()), desc='Prepare class '+str(label)):
 
         pick_img = roi_to_img(locs, pick, radius=pick_radius, oversampling=oversampling)
 
         if export is True and pick < 10:
-            filename = 'id' + str(identification) + '-' + str(pick)
+            filename = 'label' + str(label) + '-' + str(pick)
             plt.imsave('./img/' + filename + '.png', (alpha*pick_img-bg), cmap='Greys', vmax=10)
 
         pick_img = prepare_img(pick_img, img_shape=img_shape, alpha=alpha, bg=bg)
 
         data.append(pick_img)
-        label.append(identification)
+        labels.append(label)
 
     return data, label
 
@@ -92,8 +93,9 @@ def prepare_data(locs, identification, pick_radius,
 #     return np.asarray(x), np.asarray(y)
 
 
-def predict_structure(mlp, locs, pick, img_shape, pick_radius, oversampling):
+def predict_structure(mlp, locs, pick, pick_radius, oversampling):
 
+    img_shape = int(2 * pick_radius * oversampling)
     img = roi_to_img(locs, pick=pick, radius=pick_radius, oversampling=oversampling)
     img = prepare_img(img, img_shape=img_shape, alpha=10, bg=1)
     img = img.reshape(1, img_shape**2)
