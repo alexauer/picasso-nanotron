@@ -336,9 +336,9 @@ class train_dialog(QtWidgets.QDialog):
         grid.addWidget(train_parameter_box, 3, 1, 1, 1)
         grid.addWidget(self.train_btn, 4, 1, 1, 1)
         grid.addWidget(self.train_label, 5, 1, 1, 1)
-        grid.addWidget(self.learning_curve_btn, 7, 1, 1, 1)
-        grid.addWidget(self.save_model_btn, 8, 1, 1, 1)
-        grid.addWidget(self.score_box, 9, 1, 2, 1)
+        grid.addWidget(self.learning_curve_btn, 6, 1, 1, 1)
+        grid.addWidget(self.save_model_btn, 7, 1, 1, 1)
+        grid.addWidget(self.score_box, 8, 1, 2, 1)
 
 
     def save_model(self):
@@ -537,8 +537,8 @@ class train_dialog(QtWidgets.QDialog):
         self.save_model_btn.setVisible(True)
         self.train_log["Training Accuracy"] = float(score)
         self.train_log["Training Loss"] = float(self.mlp.loss_)
-        self.score_label_1_1.setText(f"{score:.2E}")
-        self.score_label_1_2.setText(f"{self.mlp.loss_:.2E}")
+        self.score_label_1_1.setText(("{:3.2f}").format(score))
+        self.score_label_1_2.setText("{:.2e}".format(self.mlp.loss_))
         self.score_box.setVisible(True)
 
 
