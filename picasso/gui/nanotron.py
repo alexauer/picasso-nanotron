@@ -908,16 +908,18 @@ class Window(QtWidgets.QMainWindow):
         all_picks = len(np.unique(self.locs['group']))
         accuracy = self.export_accuracy.value()
 
+        export_locs = self.locs.copy()
+
         if self.filter_accuracy_btn.isChecked():
             print('Probability filter set to {:4}%'.format(accuracy*100))
-            self.locs = self.locs[self.locs['score'] >= accuracy]
-            dropped_picks = all_picks - len(np.unique(self.locs['group']))
+            export_locs = export_locs[export_locs['score'] >= accuracy]
+            dropped_picks = all_picks - len(np.unique(export_locs['group']))
             print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
             self.nanotron_log['Probability'] = accuracy
 
         for prediction, name in export_classes.items():
 
-            filtered_locs = self.locs[self.locs['prediction'] == prediction]
+            filtered_locs = export_locs[export_locs['prediction'] == prediction]
             n_groups = np.unique(filtered_locs['group'])
             n_new_groups = np.arange(0, len(n_groups), 1)
             regroup_dict = dict(zip(n_groups, n_new_groups))
