@@ -16,6 +16,9 @@ import matplotlib.pyplot as plt
 import numba
 import numpy as np
 from sklearn.neural_network import MLPClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import confusion_matrix
+from sklearn.utils.multiclass import unique_labels
 import joblib
 import yaml
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -114,7 +117,7 @@ class Generator(QtCore.QThread):
 
 class Trainer(QtCore.QThread):
 
-    training_finished = QtCore.pyqtSignal(list, float)
+    training_finished = QtCore.pyqtSignal(list, float, float, list)
 
     def __init__(self, X_train, Y_train, parameter, parent=None):
         super().__init__()
@@ -123,9 +126,12 @@ class Trainer(QtCore.QThread):
         self.iterations = parameter["iterations"]
         self.learning_rate = parameter["learning_rate"]
         self.solver = parameter["solver"]
-        self.X_train = X_train
-        self.Y_train = Y_train
+        self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(X_train,
+                                                                                Y_train,
+                                                                                test_size=0.30,
+                                                                                random_state=42)
         self.mlp_list = []  # container to carry mlp class
+        self.cm_list = []
 
     def run(self):
         self.mlp_list = []
@@ -143,8 +149,14 @@ class Trainer(QtCore.QThread):
 
         mlp.fit(self.X_train, self.Y_train)
         score = mlp.score(self.X_train, self.Y_train)
+        test_score = mlp.score(self.X_test, self.Y_test)
         self.mlp_list.append(mlp)
-        self.training_finished.emit(self.mlp_list, score)
+
+        Y_pred = mlp.predict(self.X_test)
+        cm = confusion_matrix(self.Y_test, Y_pred)
+        self.cm_list.append(cm)
+
+        self.training_finished.emit(self.mlp_list, score, test_score, self.cm_list)
 
 
 class Predicter(QtCore.QThread):
@@ -208,6 +220,7 @@ class train_dialog(QtWidgets.QDialog):
         self.X_train = []
         self.Y_train = []
         self.generator_running = False
+        self.trainer_running = False
         self.train_log = {}
 
         choose_n_files_box = QtWidgets.QGroupBox("Number of Classes")
@@ -282,9 +295,10 @@ class train_dialog(QtWidgets.QDialog):
         self.train_btn.clicked.connect(self.train)
         self.train_btn.setDisabled(True)
         self.train_label = QtWidgets.QLabel("")
+        self.train_label.setAlignment(QtCore.Qt.AlignCenter)
         # train_btn.setVisible(False)
         self.learning_curve_btn = QtWidgets.QPushButton("Show Learning Curve")
-        self.learning_curve_btn.clicked.connect(self.show_learning_curve)
+        self.learning_curve_btn.clicked.connect(self.show_learning_stats)
         self.learning_curve_btn.setVisible(False)
 
         self.save_model_btn = QtWidgets.QPushButton("Save Model")
@@ -367,9 +381,11 @@ class train_dialog(QtWidgets.QDialog):
 
     def train(self):
 
-        if self.data_prepared:
+        if self.data_prepared and not self.trainer_running:
             self.train_label.setText("Model is training...")
-
+            self.score_label_1_1.setText('-')
+            self.score_label_2_1.setText('-')
+            self.score_label_1_2.setText('-')
             self.train_log["Classes"] = self.classes
             self.train_log["Training Files"] = self.training_files_path
             parameter = {}
@@ -384,19 +400,41 @@ class train_dialog(QtWidgets.QDialog):
 
             self.train_thread.training_finished.connect(self.train_finished)
             self.train_thread.start()
+            self.trainer_running = True
             print("Training started.")
 
-    def show_learning_curve(self):
+    def show_learning_stats(self):
         if self.mlp is not None:
 
-            fig1 = plt.figure(figsize=(7, 5))
-            plt.title("Learning Curve")
-            # plt.subplot(1, 2, 1)
-            plt.plot(self.mlp.loss_curve_, label="Train")
-            plt.legend(loc="best")
-            plt.xlabel("Iterations")
-            plt.ylabel("Loss")
-            fig1.show()
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+            ax1.set_title("Learning Curve")
+            ax1.plot(self.mlp.loss_curve_, label="Train")
+            ax1.legend(loc="best")
+            ax1.set_xlabel("Iterations")
+            ax1.set_ylabel("Loss")
+
+            im = ax2.imshow(self.cm, interpolation='nearest', cmap=plt.cm.Blues)
+            ax2.figure.colorbar(im, ax=ax2)
+            ax2.set(xticks=np.arange(self.cm.shape[1]),
+                    yticks=np.arange(self.cm.shape[0]),
+                    xticklabels=self.classes.values(),
+                    yticklabels=self.classes.values(),
+                    title='Confusion Matrix',
+                    ylabel='True label',
+                    xlabel='Predicted label')
+
+            plt.setp(ax2.get_yticklabels(), rotation='vertical',
+                     horizontalalignment='right',
+                     verticalalignment='center')
+
+            thresh = self.cm.max() / 2.
+            for i in range(self.cm.shape[0]):
+                for j in range(self.cm.shape[1]):
+                    ax2.text(j, i, format(self.cm[i, j], 'd'),
+                             ha="center", va="center",
+                             color="white" if self.cm[i, j] > thresh else "black")
+            plt.autoscale()
+            fig.show()
 
     def update_train_files(self):
 
@@ -422,8 +460,6 @@ class train_dialog(QtWidgets.QDialog):
                 id.setMaxLength(10)
                 self.train_files_grid.addWidget(id, file, 3)
                 self.classes_name.append(id)
-
-        return
 
     def load_train_file(self, file):
 
@@ -529,15 +565,19 @@ class train_dialog(QtWidgets.QDialog):
         self.X_train = X_train
         self.Y_train = Y_train
 
-    def train_finished(self, mlp, score):
+    def train_finished(self, mlp, score, test_score, cm):
         print("Training finished.")
+        self.trainer_running = False
         self.mlp = mlp[0]
+        self.cm = cm[0]
         self.train_label.setText("Training finished.")
         self.learning_curve_btn.setVisible(True)
         self.save_model_btn.setVisible(True)
-        self.train_log["Training Accuracy"] = float(score)
-        self.train_log["Training Loss"] = float(self.mlp.loss_)
+        self.train_log["Train Accuracy"] = float(score)
+        self.train_log["Test Accuracy"] = float(test_score)
+        self.train_log["Train Loss"] = float(self.mlp.loss_)
         self.score_label_1_1.setText(("{:3.2f}").format(score))
+        self.score_label_2_1.setText(("{:3.2f}").format(test_score))
         self.score_label_1_2.setText("{:.2e}".format(self.mlp.loss_))
         self.score_box.setVisible(True)
 
