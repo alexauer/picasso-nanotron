@@ -70,9 +70,11 @@ def prepare_data(locs, label, pick_radius,
     data = []
     labels = []
 
-    for pick in tqdm(range(locs.group.max()), desc='Prepare class '+str(label)):
+    for pick in tqdm(range(locs.group.max()), desc='Prepare '+str(label)):
 
-        pick_img = roi_to_img(locs, pick, radius=pick_radius, oversampling=oversampling)
+        pick_img = roi_to_img(locs, pick,
+                              radius=pick_radius,
+                              oversampling=oversampling)
 
         if export is True and pick < 10:
             filename = 'label' + str(label) + '-' + str(pick)

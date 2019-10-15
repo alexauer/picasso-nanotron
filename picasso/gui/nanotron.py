@@ -18,7 +18,6 @@ import numpy as np
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
-from sklearn.utils.multiclass import unique_labels
 import joblib
 import yaml
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -43,13 +42,12 @@ def render_hist(x, y, oversampling, t_min, t_max):
     return len(x), image
 
 
-# class Generator(QtCore.QThread):
 class Generator(QtCore.QThread):
 
     datasets_made = QtCore.pyqtSignal(int, int, int, int)
     datasets_finished = QtCore.pyqtSignal(list, list)
 
-    def __init__(self, locs, classes, pick_radius, oversampling, export, parent=None):
+    def __init__(self, locs, classes, pick_radius, oversampling, export, export_paths, parent=None):
         super().__init__()
         self.locs_files = locs.copy()
         self.pick_radius = pick_radius
@@ -57,6 +55,7 @@ class Generator(QtCore.QThread):
         self.classes = classes
         self.n_datasets = len(self.locs_files)
         self.export = export
+        self.export_paths = export_paths
         print(self.n_datasets)
 
     def combine_data_sets(self, X_files, Y_files):
@@ -87,6 +86,8 @@ class Generator(QtCore.QThread):
             label = self.classes[id]
             n_locs = locs.group.max()
 
+            export_path = _ospath.dirname(self.export_paths[id]) + '/'
+
             for c, pick in enumerate(tqdm(np.unique(locs.group), desc='Prepare class ' + str(label))):
 
                 pick_img = nanotron.roi_to_img(locs=locs,
@@ -95,8 +96,9 @@ class Generator(QtCore.QThread):
                                                oversampling=self.oversampling)
 
                 if self.export is True and pick < 10:
-                    filename = 'label' + str(label) + '-' + str(pick)
-                    plt.imsave('./img/' + filename + '.png', (10*pick_img-1), cmap='Greys', vmax=10)
+                    filename = str(label).replace(" ", "_").lower() + '-' + str(pick)
+                    plt.imsave(export_path + filename + '.png', (10*pick_img-1),
+                               cmap='Greys')
 
                 pick_img = nanotron.prepare_img(pick_img,
                                                 img_shape=img_shape,
@@ -406,7 +408,7 @@ class train_dialog(QtWidgets.QDialog):
     def show_learning_stats(self):
         if self.mlp is not None:
 
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
             ax1.set_title("Learning Curve")
             ax1.plot(self.mlp.loss_curve_, label="Train")
             ax1.legend(loc="best")
@@ -526,7 +528,6 @@ class train_dialog(QtWidgets.QDialog):
             # Get the largest pick radius
             max_key = max(self.pick_radii, key=lambda x: self.pick_radii.get(x))
             self.pick_radius = self.pick_radii[max_key]
-            # self.pick_radius = 0.4
             self.oversampling = self.oversampling_box.value()
 
             self.train_log["Pick Diameter"] = 2 * self.pick_radius
@@ -537,12 +538,13 @@ class train_dialog(QtWidgets.QDialog):
                                         classes=self.classes,
                                         pick_radius=self.pick_radius,
                                         oversampling=self.oversampling,
-                                        export=False
+                                        export=True,
+                                        export_paths=self.training_files_path
                                          )
             self.generate_thread.datasets_made.connect(self.prepare_progress)
             self.generate_thread.datasets_finished.connect(self.prepare_finished)
             self.generate_thread.start()
-            # x_train, y_train = self.generate_thread.run()
+
         else:
             msgBox = QtWidgets.QMessageBox(self)
             msgBox.setWindowTitle("Error")
