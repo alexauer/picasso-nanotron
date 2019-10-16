@@ -56,7 +56,6 @@ class Generator(QtCore.QThread):
         self.n_datasets = len(self.locs_files)
         self.export = export
         self.export_paths = export_paths
-        print(self.n_datasets)
 
     def combine_data_sets(self, X_files, Y_files):
 
@@ -117,13 +116,14 @@ class Generator(QtCore.QThread):
         self.datasets_finished.emit(X_train, Y_train)
 
 
+
 class Trainer(QtCore.QThread):
 
     training_finished = QtCore.pyqtSignal(list, float, float, list)
 
     def __init__(self, X_train, Y_train, parameter, parent=None):
         super().__init__()
-        self.nodes = parameter["nodes"]
+        self.network = parameter["network"]
         self.activation = parameter["activation"]
         self.iterations = parameter["iterations"]
         self.learning_rate = parameter["learning_rate"]
@@ -133,11 +133,12 @@ class Trainer(QtCore.QThread):
                                                                                 test_size=0.30,
                                                                                 random_state=42)
         self.mlp_list = []  # container to carry mlp class
-        self.cm_list = []
+        self.cm_list = []  # container to carry confusion_matrix
 
     def run(self):
         self.mlp_list = []
-        mlp = MLPClassifier(hidden_layer_sizes=(self.nodes,),
+        hidden_layer_sizes = tuple(self.network.values())
+        mlp = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes,
                             activation=self.activation,
                             max_iter=self.iterations,
                             alpha=0.01,
@@ -217,6 +218,8 @@ class train_dialog(QtWidgets.QDialog):
         self.training_files_path = {}
         self.classes = {}
         self.classes_name = []
+        self.network = {}
+        self.nodes = []
         self.f_btns = []
         self.pick_radii = {}
         self.X_train = []
@@ -258,23 +261,28 @@ class train_dialog(QtWidgets.QDialog):
 
         perceptron_box = QtWidgets.QGroupBox("Perceptron")
         perceptron_grid = QtWidgets.QGridLayout(perceptron_box)
-        perceptron_grid.addWidget(QtWidgets.QLabel("Nodes:"), 0, 0)
 
-        self.nodes = QtWidgets.QSpinBox()
-        self.nodes.setRange(1, 1000)
-        self.nodes.setValue(100)
-        self.nodes.setKeyboardTracking(False)
-        perceptron_grid.addWidget(self.nodes, 0, 1)
+        perceptron_grid.addWidget(QtWidgets.QLabel("Hidden Layers:"), 0, 0)
+        self.n_layers = QtWidgets.QSpinBox()
+        self.n_layers.setRange(1, 3)
+        self.n_layers.setValue(1)
+        self.n_layers.valueChanged.connect(self.update_nodes_box)
+        perceptron_grid.addWidget(self.n_layers, 0, 1)
 
-        perceptron_grid.addWidget(QtWidgets.QLabel("Solver:"), 2, 0)
+        perceptron_grid.addWidget(QtWidgets.QLabel("Nodes:"), 1, 0)
+        self.nodes_box = QtWidgets.QGridLayout()
+        self.update_nodes_box()
+        perceptron_grid.addLayout(self.nodes_box, 2, 0, 1, 2)
+
+        perceptron_grid.addWidget(QtWidgets.QLabel("Solver:"), 3, 0)
         self.solver = QtWidgets.QComboBox()
         self.solver.addItems(['adam', 'lbfgs', 'sgd'])
-        perceptron_grid.addWidget(self.solver, 2, 1)
+        perceptron_grid.addWidget(self.solver, 3, 1)
 
-        perceptron_grid.addWidget(QtWidgets.QLabel("Activation:"), 3, 0)
+        perceptron_grid.addWidget(QtWidgets.QLabel("Activation:"), 4, 0)
         self.activation_ft = QtWidgets.QComboBox()
         self.activation_ft.addItems(['relu', 'identity', 'logistic', 'tanh'])
-        perceptron_grid.addWidget(self.activation_ft, 3, 1)
+        perceptron_grid.addWidget(self.activation_ft, 4, 1)
 
         train_parameter_box = QtWidgets.QGroupBox("Training")
         train_parameter_grid = QtWidgets.QGridLayout(train_parameter_box)
@@ -287,15 +295,19 @@ class train_dialog(QtWidgets.QDialog):
 
         train_parameter_grid.addWidget(QtWidgets.QLabel("Learning Rate:"), 1, 0)
         self.learing_rate = QtWidgets.QDoubleSpinBox()
-        self.learing_rate.setRange(0, 10)
-        self.learing_rate.setValue(0.01)
-        self.learing_rate.setSingleStep(0.01)
+        self.learing_rate.setRange(0.001, 10)
+        self.learing_rate.setValue(0.001)
+        self.learing_rate.setSingleStep(0.001)
         self.learing_rate.setDecimals(4)
         train_parameter_grid.addWidget(self.learing_rate, 1, 1)
 
+        self.extended_training = QtWidgets.QCheckBox("Extend Training Set")
+        self.extended_training.setChecked(False)
+        train_parameter_grid.addWidget(self.extended_training, 2, 0, 1, 2)
+
         self.train_btn = QtWidgets.QPushButton("Train Model")
         self.train_btn.clicked.connect(self.train)
-        self.train_btn.setDisabled(True)
+        # self.train_btn.setDisabled(True)
         self.train_label = QtWidgets.QLabel("")
         self.train_label.setAlignment(QtCore.Qt.AlignCenter)
         # train_btn.setVisible(False)
@@ -331,7 +343,6 @@ class train_dialog(QtWidgets.QDialog):
 
         progress_box = QtWidgets.QGroupBox()
         progress_grid = QtWidgets.QGridLayout(progress_box)
-        # progress_grid =
         self.progress_sets_label = QtWidgets.QLabel()
         self.progress_sets_label.setAlignment(QtCore.Qt.AlignLeft)
         self.progress_imgs_label = QtWidgets.QLabel()
@@ -343,19 +354,30 @@ class train_dialog(QtWidgets.QDialog):
         progress_grid.addWidget(self.progress_bar, 1, 0, 1, 2)
 
         grid.addWidget(choose_n_files_box, 0, 0, 1, 1)
-        grid.addWidget(train_files_box, 1, 0, 6, 1)
-        grid.addWidget(train_img_box, 7, 0, 1, 1)
-        grid.addWidget(prepare_data_btn, 8, 0, 1, 1)
-        grid.addWidget(progress_box, 9, 0, 2, 1)
+        grid.addWidget(train_files_box, 1, 0, 9, 1)
+        grid.addWidget(train_img_box, 10, 0, 1, 1)
+        grid.addWidget(prepare_data_btn, 11, 0, 1, 1)
+        grid.addWidget(progress_box, 12, 0, 2, 1)
 
-        grid.addWidget(perceptron_box, 0, 1, 3, 1)
-        grid.addWidget(train_parameter_box, 3, 1, 1, 1)
-        grid.addWidget(self.train_btn, 4, 1, 1, 1)
-        grid.addWidget(self.learning_curve_btn, 5, 1, 1, 1)
-        grid.addWidget(self.train_label, 7, 1, 1, 1)
-        grid.addWidget(self.save_model_btn, 8, 1, 1, 1)
-        grid.addWidget(self.score_box, 9, 1, 2, 1)
+        grid.addWidget(perceptron_box, 0, 1, 5, 1)
+        grid.addWidget(train_parameter_box, 5, 1, 3, 1)
+        grid.addWidget(self.train_btn, 8, 1, 1, 1)
+        grid.addWidget(self.learning_curve_btn, 9, 1, 1, 1)
+        grid.addWidget(self.train_label, 10, 1, 1, 1)
+        grid.addWidget(self.save_model_btn, 11, 1, 1, 1)
+        grid.addWidget(self.score_box, 12, 1, 2, 1)
 
+    def update_nodes_box(self):
+        self.window.clearLayout(self.nodes_box)
+        self.nodes.clear()
+        n_layers = self.n_layers.value()
+        for layer in range(n_layers):
+
+            n = QtWidgets.QSpinBox()
+            n.setRange(0, 999)
+            n.setValue(100)
+            self.nodes.append(n)
+            self.nodes_box.addWidget(n, 0, layer)
 
     def save_model(self):
 
@@ -391,7 +413,12 @@ class train_dialog(QtWidgets.QDialog):
             self.train_log["Classes"] = self.classes
             self.train_log["Training Files"] = self.training_files_path
             parameter = {}
-            parameter["nodes"] = self.nodes.value()
+            self.network.clear()
+            for layer, nodes in enumerate(self.nodes):
+                self.network[layer] = nodes.value()
+
+            self.train_log["Network"] = self.network
+            parameter["network"] = self.network
             parameter["activation"] = self.activation_ft.currentText()
             parameter["iterations"] = self.iterations.value()
             parameter["learning_rate"] = self.learing_rate.value()
@@ -538,7 +565,7 @@ class train_dialog(QtWidgets.QDialog):
                                         classes=self.classes,
                                         pick_radius=self.pick_radius,
                                         oversampling=self.oversampling,
-                                        export=True,
+                                        export=self.export_img.isChecked(),
                                         export_paths=self.training_files_path
                                          )
             self.generate_thread.datasets_made.connect(self.prepare_progress)
