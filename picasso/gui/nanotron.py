@@ -25,7 +25,6 @@ from PyQt5.QtGui import QIcon
 
 from .. import io, lib, render, nanotron
 
-DEFAULT_OVERSAMPLING = 1.0
 DEFAULT_MODEL_PATH = "/picasso/model/model.sav"
 
 
@@ -47,10 +46,11 @@ class Generator(QtCore.QThread):
     datasets_made = QtCore.pyqtSignal(int, int, int, int)
     datasets_finished = QtCore.pyqtSignal(list, list)
 
-    def __init__(self, locs, classes, pick_radius, oversampling, export, export_paths, parent=None):
+    def __init__(self, locs, classes, pick_radius, oversampling, extend, export, export_paths, parent=None):
         super().__init__()
         self.locs_files = locs.copy()
         self.pick_radius = pick_radius
+        self.extend = extend
         self.oversampling = oversampling
         self.classes = classes
         self.n_datasets = len(self.locs_files)
@@ -58,9 +58,6 @@ class Generator(QtCore.QThread):
         self.export_paths = export_paths
 
     def combine_data_sets(self, X_files, Y_files):
-
-        # X = [img for xfile in X_files for img in xfile]
-        # Y = [label for yfile in X_files for label in yfile]
 
         X = []
         Y = []
@@ -99,12 +96,35 @@ class Generator(QtCore.QThread):
                     plt.imsave(export_path + filename + '.png', (10*pick_img-1),
                                cmap='Greys')
 
+                if self.extend:
+                    delta = 30
+                    last_rot = 360 - delta
+                    splits = 360 / delta
+                    for angle in range(delta, last_rot, delta):
+
+                        rot_img = nanotron.rotate_img(pick_img, angle)
+                        rot_img = nanotron.prepare_img(rot_img,
+                                                       img_shape=img_shape,
+                                                       alpha=10,
+                                                       bg=1)
+                        labels.append(id)
+                        data.append(rot_img)
+
+                    self.datasets_made.emit(id+1,
+                                            self.n_datasets,
+                                            splits*(c+1),
+                                            splits*(n_locs+1))
+                else:
+                    self.datasets_made.emit(id+1,
+                                            self.n_datasets,
+                                            c+1,
+                                            n_locs+1)
+
                 pick_img = nanotron.prepare_img(pick_img,
                                                 img_shape=img_shape,
                                                 alpha=10,
                                                 bg=1)
 
-                self.datasets_made.emit(id+1, self.n_datasets, c+1, n_locs+1)
                 data.append(pick_img)
                 labels.append(id)
 
@@ -116,9 +136,9 @@ class Generator(QtCore.QThread):
         self.datasets_finished.emit(X_train, Y_train)
 
 
-
 class Trainer(QtCore.QThread):
 
+    training_progress_made = QtCore.pyqtSignal(int, int, int, int)
     training_finished = QtCore.pyqtSignal(list, float, float, list)
 
     def __init__(self, X_train, Y_train, parameter, parent=None):
@@ -235,26 +255,31 @@ class train_dialog(QtWidgets.QDialog):
         self.choose_n_files.setValue(0)
         self.choose_n_files.setKeyboardTracking(False)
 
-        file_slots_btn = QtWidgets.QPushButton("Generate Data Set")
-        file_slots_btn.clicked.connect(self.update_train_files)
+        self.file_slots_btn = QtWidgets.QPushButton("Generate Data Set")
+        self.file_slots_btn.clicked.connect(self.update_train_files)
         choose_class_grid.addWidget(QtWidgets.QLabel("Classes:"), 0, 0)
         choose_class_grid.addWidget(self.choose_n_files, 0, 1)
-        choose_class_grid.addWidget(file_slots_btn, 0, 2)
+        choose_class_grid.addWidget(self.file_slots_btn, 0, 2)
 
         train_files_box = QtWidgets.QGroupBox("Training Files")
         self.train_files_grid = QtWidgets.QGridLayout(train_files_box)
 
         train_img_box = QtWidgets.QGroupBox("Image Parameter")
-        self.train_img_grid = QtWidgets.QHBoxLayout(train_img_box)
+        self.train_img_grid = QtWidgets.QGridLayout(train_img_box)
         self.oversampling_box = QtWidgets.QSpinBox()
         self.oversampling_box.setRange(1, 200)
         self.oversampling_box.setValue(50)
+
+        self.extended_training = QtWidgets.QCheckBox("Extend Training Set")
+        self.extended_training.setChecked(False)
+
         self.export_img = QtWidgets.QCheckBox("Export Image Subset")
         self.export_img.setChecked(False)
 
-        self.train_img_grid.addWidget(QtWidgets.QLabel("Oversampling:"), 0)
-        self.train_img_grid.addWidget(self.oversampling_box, 1)
-        self.train_img_grid.addWidget(self.export_img, 2)
+        self.train_img_grid.addWidget(QtWidgets.QLabel("Oversampling:"), 0, 0)
+        self.train_img_grid.addWidget(self.oversampling_box, 0, 1)
+        self.train_img_grid.addWidget(self.extended_training, 1, 0)
+        self.train_img_grid.addWidget(self.export_img, 1, 1)
 
         prepare_data_btn = QtWidgets.QPushButton("Prepare Data")
         prepare_data_btn.clicked.connect(self.prepare_data)
@@ -301,9 +326,6 @@ class train_dialog(QtWidgets.QDialog):
         self.learing_rate.setDecimals(4)
         train_parameter_grid.addWidget(self.learing_rate, 1, 1)
 
-        self.extended_training = QtWidgets.QCheckBox("Extend Training Set")
-        self.extended_training.setChecked(False)
-        train_parameter_grid.addWidget(self.extended_training, 2, 0, 1, 2)
 
         self.train_btn = QtWidgets.QPushButton("Train Model")
         self.train_btn.clicked.connect(self.train)
@@ -355,17 +377,17 @@ class train_dialog(QtWidgets.QDialog):
 
         grid.addWidget(choose_n_files_box, 0, 0, 1, 1)
         grid.addWidget(train_files_box, 1, 0, 9, 1)
-        grid.addWidget(train_img_box, 10, 0, 1, 1)
-        grid.addWidget(prepare_data_btn, 11, 0, 1, 1)
-        grid.addWidget(progress_box, 12, 0, 2, 1)
+        grid.addWidget(train_img_box, 10, 0, 2, 1)
+        grid.addWidget(prepare_data_btn, 12, 0, 1, 1)
+        grid.addWidget(progress_box, 13, 0, 2, 1)
 
         grid.addWidget(perceptron_box, 0, 1, 5, 1)
-        grid.addWidget(train_parameter_box, 5, 1, 3, 1)
-        grid.addWidget(self.train_btn, 8, 1, 1, 1)
-        grid.addWidget(self.learning_curve_btn, 9, 1, 1, 1)
-        grid.addWidget(self.train_label, 10, 1, 1, 1)
-        grid.addWidget(self.save_model_btn, 11, 1, 1, 1)
-        grid.addWidget(self.score_box, 12, 1, 2, 1)
+        grid.addWidget(train_parameter_box, 5, 1, 2, 1)
+        grid.addWidget(self.train_btn, 7, 1, 1, 1)
+        grid.addWidget(self.learning_curve_btn, 8, 1, 1, 1)
+        grid.addWidget(self.save_model_btn, 9, 1, 1, 1)
+        grid.addWidget(self.train_label, 10, 1, 2, 1)
+        grid.addWidget(self.score_box, 13, 1, 2, 1)
 
     def update_nodes_box(self):
         self.window.clearLayout(self.nodes_box)
@@ -469,6 +491,7 @@ class train_dialog(QtWidgets.QDialog):
 
         if not self.file_slots_generated:
             self.file_slots_generated = True
+            self.file_slots_btn.setDisabled(True)
 
             for file in range(self.choose_n_files.value()):
 
@@ -530,7 +553,7 @@ class train_dialog(QtWidgets.QDialog):
         n_datasets = len(self.training_files)
 
         passed = False
-        n_ids = 0  # not very elegant
+        n_ids = 0
 
         for id, txt in enumerate(self.classes_name):
             name = txt.text().strip()
@@ -559,12 +582,14 @@ class train_dialog(QtWidgets.QDialog):
 
             self.train_log["Pick Diameter"] = 2 * self.pick_radius
             self.train_log["Oversampling"] = self.oversampling
+            self.train_log["Training Set Expansion"] = self.extended_training.isChecked()
 
             self.generate_thread = Generator(
                                         locs=self.training_files,
                                         classes=self.classes,
                                         pick_radius=self.pick_radius,
                                         oversampling=self.oversampling,
+                                        extend=self.extended_training.isChecked(),
                                         export=self.export_img.isChecked(),
                                         export_paths=self.training_files_path
                                          )

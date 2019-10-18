@@ -11,9 +11,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm as tqdm
-
-from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import accuracy_score
+from scipy import ndimage
 
 from . import render
 
@@ -29,6 +27,31 @@ def prepare_img(img, img_shape, alpha=1, bg=0):
     return img
 
 
+def rotate_img(img, angle):
+
+    rot_img = ndimage.rotate(img, angle, reshape=False)
+
+    return rot_img
+
+
+def rotate_locs(locs, angle):
+
+    rot_locs = locs.copy()
+    a = angle/360 * 2 * pi
+    x_mean = np.mean(rot_locs.x)
+    y_mean = np.mean(rot_locs.y)
+    rot_locs.x -= x_mean
+    rot_locs.y -= y_mean
+    x_ = rot_locs.x.copy()
+    y_ = rot_locs.y.copy()
+    rot_locs.x[:] = x_*cos(a) - y_*sin(a)
+    rot_locs.y[:] = x_*sin(a) + y_*cos(a)
+    rot_locs.x += x_mean
+    rot_locs.y += y_mean
+
+    return rot_locs
+
+
 def roi_to_img(locs, pick, radius, oversampling):
 
     # Isolate locs from pick
@@ -37,11 +60,13 @@ def roi_to_img(locs, pick, radius, oversampling):
     # dirty method to avoid floating point errors with render
     radius -= 0.001
 
-    # Calculate viewport
-    x_min = np.mean(pick_locs.x) - radius
-    x_max = np.mean(pick_locs.x) + radius
-    y_min = np.mean(pick_locs.y) - radius
-    y_max = np.mean(pick_locs.y) + radius
+    x_mean = np.mean(pick_locs.x)
+    y_mean = np.mean(pick_locs.y)
+
+    x_min = x_mean - radius
+    x_max = x_mean + radius
+    y_min = y_mean - radius
+    y_max = y_mean + radius
 
     viewport = (y_min, x_min), (y_max, x_max)
 
