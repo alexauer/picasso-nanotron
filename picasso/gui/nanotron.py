@@ -46,11 +46,11 @@ class Generator(QtCore.QThread):
     datasets_made = QtCore.pyqtSignal(int, int, int, int)
     datasets_finished = QtCore.pyqtSignal(list, list)
 
-    def __init__(self, locs, classes, pick_radius, oversampling, extend, export, export_paths, parent=None):
+    def __init__(self, locs, classes, pick_radius, oversampling, expand, export, export_paths, parent=None):
         super().__init__()
         self.locs_files = locs.copy()
         self.pick_radius = pick_radius
-        self.extend = extend
+        self.expand = expand
         self.oversampling = oversampling
         self.classes = classes
         self.n_datasets = len(self.locs_files)
@@ -96,7 +96,7 @@ class Generator(QtCore.QThread):
                     plt.imsave(export_path + filename + ".png", (10*pick_img-1),
                                cmap="Greys")
 
-                if self.extend:
+                if self.expand:
                     delta = 30
                     last_rot = 360 - delta
                     splits = 360 / delta
@@ -270,15 +270,15 @@ class train_dialog(QtWidgets.QDialog):
         self.oversampling_box.setRange(1, 200)
         self.oversampling_box.setValue(50)
 
-        self.extended_training = QtWidgets.QCheckBox("Extend Training Set")
-        self.extended_training.setChecked(False)
+        self.expand_training = QtWidgets.QCheckBox("Expand Training Set")
+        self.expand_training.setChecked(False)
 
         self.export_img = QtWidgets.QCheckBox("Export Image Subset")
         self.export_img.setChecked(False)
 
         self.train_img_grid.addWidget(QtWidgets.QLabel("Oversampling:"), 0, 0)
         self.train_img_grid.addWidget(self.oversampling_box, 0, 1)
-        self.train_img_grid.addWidget(self.extended_training, 1, 0)
+        self.train_img_grid.addWidget(self.expand_training, 1, 0)
         self.train_img_grid.addWidget(self.export_img, 1, 1)
 
         prepare_data_btn = QtWidgets.QPushButton("Prepare Data")
@@ -583,14 +583,14 @@ class train_dialog(QtWidgets.QDialog):
 
             self.train_log["Pick Diameter"] = 2 * self.pick_radius
             self.train_log["Oversampling"] = self.oversampling
-            self.train_log["Training Set Expansion"] = self.extended_training.isChecked()
+            self.train_log["Expand Trainig Set"] = self.expand_training.isChecked()
 
             self.generate_thread = Generator(
                                         locs=self.training_files,
                                         classes=self.classes,
                                         pick_radius=self.pick_radius,
                                         oversampling=self.oversampling,
-                                        extend=self.extended_training.isChecked(),
+                                        expand=self.expand_training.isChecked(),
                                         export=self.export_img.isChecked(),
                                         export_paths=self.training_files_path
                                          )
@@ -933,8 +933,9 @@ class Window(QtWidgets.QMainWindow):
             # raise ValueError("Default model not loaded.")
 
         try:
-            with open(path[:-3]+"yaml", "r") as f:
-                self.model_info = yaml.load(f)
+            base, ext = os.path.splitext(path)
+            with open(base + "yaml", "r") as f:
+                self.model_info = yaml.load(f, Loader=yaml.FullLoader)
                 self.classes = []
                 self.classes = self.model_info["Classes"]
                 self.model_loaded = True
@@ -954,8 +955,9 @@ class Window(QtWidgets.QMainWindow):
                 raise ValueError("No model file loaded.")
 
             try:
-                with open(path[:-3]+"yaml", "r") as f:
-                    self.model_info = yaml.load(f)
+                base, ext = os.path.splitext(path)
+                with open(base + "yaml", "r") as f:
+                    self.model_info = yaml.load(f, Loader=yaml.FullLoader)
                     self.classes = []
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
