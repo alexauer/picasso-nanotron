@@ -11,10 +11,16 @@ import sys
 import traceback
 from tqdm import tqdm
 import datetime
+from time import sleep
 
 import matplotlib.pyplot as plt
 import numba
 import numpy as np
+
+import threading
+import multiprocessing
+import concurrent.futures
+
 from sklearn.neural_network import MLPClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
@@ -183,6 +189,7 @@ class Trainer(QtCore.QThread):
 
 
 class Predictor(QtCore.QThread):
+# class Predictor():
 
     predictions_made = QtCore.pyqtSignal(int, int)
     prediction_finished = QtCore.pyqtSignal(np.recarray)
@@ -194,35 +201,138 @@ class Predictor(QtCore.QThread):
         self.pick_radius = pick_radius
         self.oversampling = oversampling
 
+        self.n_locs = len(self.locs["group"])
+        self.prediction = np.zeros(len(np.unique(self.locs['group'])),
+                                                 dtype=[('group', 'u4'),
+                                                       ('prediction', 'i4'),
+                                                       ('score', 'f4')])
+
+        self.prediction['group'] = np.unique(self.locs['group'])
+
+        self.n_groups = len(np.unique(self.locs['group']))
+
+        self.p_locs = np.zeros(len(self.locs['group']),
+                                   dtype=[('group', 'u4'),
+                                         ('prediction', 'i4'),
+                                         ('score', 'f4')])
+
+    def checkConsecutive(self, l):
+        n = len(l) - 1
+        return (sum(np.diff(sorted(l)) == 1) >= n)
+
+    def _worker(self, mlp, locs, picks, pick_radius, oversampling, current, lock, n_picks, predicitions, probabilities, finished):
+
+        while True:
+            with lock:
+                index = current[0]
+                if index == n_picks:
+                    return
+                current[0] += 1
+
+            pick = picks[index]
+            pred, pred_proba = nanotron.predict_structure(mlp=mlp,
+                                                 locs=locs,
+                                                 pick=pick,
+                                                 pick_radius=pick_radius,
+                                                 oversampling=oversampling)
+            predicitions[index] = pred[0]
+            probabilities[index] = pred_proba.max()
+
+            with lock:
+                finished[0] += 1
+
+
+    def predict_async(self, model, locs, picks, pick_radius, oversampling):
+
+        n_picks = len(picks)
+
+        predictions = np.zeros(n_picks)
+        probabilities = np.zeros(n_picks)
+
+        lock = threading.Lock()
+
+        n_workers = multiprocessing.cpu_count()
+
+        current = [0]
+        finished = [0]
+        executor = concurrent.futures.ThreadPoolExecutor(n_workers)
+        for i in range(n_workers):
+            executor.submit(
+                self._worker,
+                model,
+                locs,
+                picks,
+                pick_radius,
+                oversampling,
+                current,
+                lock,
+                n_picks,
+                predictions,
+                probabilities,
+                finished
+            )
+
+        executor.shutdown(wait=False)
+        return current, predictions, probabilities, finished
+
     def run(self):
 
-        self.prediction = np.zeros(len(np.unique(self.locs["group"])),
-                                   dtype=[("group", "u4"),
-                                   ("prediction", "i4"), ("score", "f4")])
-        self.prediction["group"] = np.unique(self.locs["group"])
-        n_groups = len(np.unique(self.locs["group"]))
-        p_locs = np.zeros(len(self.locs["group"]), dtype=[("group", "u4"),
-                          ("prediction", "i4"), ("score", "f4")])
+        N = len(self.prediction['group'])
+        picks = self.prediction['group']
 
-        for id, pick in enumerate(tqdm(self.prediction["group"],
-                                  desc="Predict")):
+        current, predictions, probabilities, finished = self.predict_async(
+            self.model,
+            self.locs,
+            picks,
+            self.pick_radius,
+            self.oversampling
+        )
 
-            self.predictions_made.emit(pick, n_groups)
+        while finished[0] < N:
+            # print("\rPredicted pick {}".format(finished[0]), end='')
+            self.predictions_made.emit(int(current[0]), N)
+            sleep(0.2)
 
-            pred, pred_proba = nanotron.predict_structure(mlp=self.model,
-                                                          locs=self.locs,
-                                                          pick=pick,
-                                                          pick_radius=self.pick_radius,
-                                                          oversampling=self.oversampling)
+        classes = np.array(predictions)
+        probas = np.array(probabilities)
 
-            # Save predictions and scores in numpy array
-            self.prediction[self.prediction["group"] == pick] = pick, pred[0], pred_proba.max()
-            p_locs[self.locs["group"] == pick] = pick, pred[0], pred_proba.max()
+        assert self.checkConsecutive(picks)
 
-        self.locs = lib.append_to_rec(self.locs, p_locs["prediction"], "prediction")
-        self.locs = lib.append_to_rec(self.locs, p_locs["score"], "score")
+        self.locs = lib.append_to_rec(self.locs, classes[self.locs['group']], 'prediction')
+        self.locs = lib.append_to_rec(self.locs, probas[self.locs['group']], 'score')
 
         self.prediction_finished.emit(self.locs)
+
+
+    # def run(self):
+    #
+    #     self.prediction = np.zeros(len(np.unique(self.locs["group"])),
+    #                                dtype=[("group", "u4"),
+    #                                ("prediction", "i4"), ("score", "f4")])
+    #     self.prediction["group"] = np.unique(self.locs["group"])
+    #     n_groups = len(np.unique(self.locs["group"]))
+    #     p_locs = np.zeros(len(self.locs["group"]), dtype=[("group", "u4"),
+    #                       ("prediction", "i4"), ("score", "f4")])
+    #
+    #     for id, pick in enumerate(tqdm(self.prediction["group"],
+    #                               desc="Predict")):
+    #
+    #         self.predictions_made.emit(pick, n_groups)
+    #
+    #         pred, pred_proba = nanotron.predict_structure(mlp=self.model,
+    #                                                       locs=self.locs,
+    #                                                       pick=pick,
+    #                                                       pick_radius=self.pick_radius,
+    #                                                       oversampling=self.oversampling)
+    #
+    #         # Save predictions and scores in numpy array
+    #         self.prediction[self.prediction["group"] == pick] = pick, pred[0], pred_proba.max()
+    #         p_locs[self.locs["group"] == pick] = pick, pred[0], pred_proba.max()
+    #
+    #     self.locs = lib.append_to_rec(self.locs, p_locs["prediction"], "prediction")
+    #     self.locs = lib.append_to_rec(self.locs, p_locs["score"], "score")
+    #
+    #     self.prediction_finished.emit(self.locs)
 
 
 class train_dialog(QtWidgets.QDialog):
@@ -329,7 +439,7 @@ class train_dialog(QtWidgets.QDialog):
 
         self.train_btn = QtWidgets.QPushButton("Train Model")
         self.train_btn.clicked.connect(self.train)
-        # self.train_btn.setDisabled(True)
+        self.train_btn.setDisabled(True)
         self.train_label = QtWidgets.QLabel("")
         self.train_label.setAlignment(QtCore.Qt.AlignCenter)
         # train_btn.setVisible(False)
@@ -819,7 +929,6 @@ class Window(QtWidgets.QMainWindow):
                 self.model, self.locs, self.pick_radius, self.oversampling,
             )
             self.thread.predictions_made.connect(self.on_progress)
-
             self.thread.prediction_finished.connect(self.on_finished)
             self.thread.start()
 
@@ -830,7 +939,6 @@ class Window(QtWidgets.QMainWindow):
         self.status_bar.showMessage("Prediction finished.")
 
     def on_progress(self, pick, total_picks):
-        # self.locs = locs.copy()
         self.status_bar.showMessage("Predicting... Please wait. From {} picks - predicted {}"
                                     .format(total_picks, pick))
 
