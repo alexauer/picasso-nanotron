@@ -289,9 +289,8 @@ class Predictor(QtCore.QThread):
         )
 
         while finished[0] < N:
-            # print("\rPredicted pick {}".format(finished[0]), end='')
             self.predictions_made.emit(int(current[0]), N)
-            sleep(0.2)
+            # sleep(0.2)
 
         classes = np.array(predictions)
         probas = np.array(probabilities)
@@ -302,37 +301,6 @@ class Predictor(QtCore.QThread):
         self.locs = lib.append_to_rec(self.locs, probas[self.locs['group']], 'score')
 
         self.prediction_finished.emit(self.locs)
-
-
-    # def run(self):
-    #
-    #     self.prediction = np.zeros(len(np.unique(self.locs["group"])),
-    #                                dtype=[("group", "u4"),
-    #                                ("prediction", "i4"), ("score", "f4")])
-    #     self.prediction["group"] = np.unique(self.locs["group"])
-    #     n_groups = len(np.unique(self.locs["group"]))
-    #     p_locs = np.zeros(len(self.locs["group"]), dtype=[("group", "u4"),
-    #                       ("prediction", "i4"), ("score", "f4")])
-    #
-    #     for id, pick in enumerate(tqdm(self.prediction["group"],
-    #                               desc="Predict")):
-    #
-    #         self.predictions_made.emit(pick, n_groups)
-    #
-    #         pred, pred_proba = nanotron.predict_structure(mlp=self.model,
-    #                                                       locs=self.locs,
-    #                                                       pick=pick,
-    #                                                       pick_radius=self.pick_radius,
-    #                                                       oversampling=self.oversampling)
-    #
-    #         # Save predictions and scores in numpy array
-    #         self.prediction[self.prediction["group"] == pick] = pick, pred[0], pred_proba.max()
-    #         p_locs[self.locs["group"] == pick] = pick, pred[0], pred_proba.max()
-    #
-    #     self.locs = lib.append_to_rec(self.locs, p_locs["prediction"], "prediction")
-    #     self.locs = lib.append_to_rec(self.locs, p_locs["score"], "score")
-    #
-    #     self.prediction_finished.emit(self.locs)
 
 
 class train_dialog(QtWidgets.QDialog):
@@ -939,8 +907,11 @@ class Window(QtWidgets.QMainWindow):
         self.status_bar.showMessage("Prediction finished.")
 
     def on_progress(self, pick, total_picks):
-        self.status_bar.showMessage("Predicting... Please wait. From {} picks - predicted {}"
-                                    .format(total_picks, pick))
+        if pick == total_picks:
+            self.status_bar.showMessage("Predicting finished. Cleaning up... Please wait.")
+        else:
+            self.status_bar.showMessage("Predicting... Please wait. From {} picks - predicted {}"
+                                       .format(total_picks, pick))
 
     def open(self):
         path, exe = QtWidgets.QFileDialog.getOpenFileName(
