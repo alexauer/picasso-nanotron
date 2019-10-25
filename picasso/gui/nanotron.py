@@ -926,7 +926,7 @@ class Window(QtWidgets.QMainWindow):
         try:
             self.model = joblib.load(path)
             self.nanotron_log["Model Path"] = path
-            print("Defaul model loaded.")
+            print("Default model loaded.")
         except Exception:
             print("Default model not loaded.")
             self.status_bar.showMessage("Load model.")
@@ -936,7 +936,7 @@ class Window(QtWidgets.QMainWindow):
             base, ext = os.path.splitext(path)
             with open(base + ".yaml", "r") as f:
                 self.model_info = yaml.load(f, Loader=yaml.FullLoader)
-                self.classes = []
+                self.classes.clear()
                 self.classes = self.model_info["Classes"]
                 self.model_loaded = True
         except io.NoMetadataFileError:
@@ -958,7 +958,7 @@ class Window(QtWidgets.QMainWindow):
                 base, ext = os.path.splitext(path)
                 with open(base + ".yaml", "r") as f:
                     self.model_info = yaml.load(f, Loader=yaml.FullLoader)
-                    self.classes = []
+                    self.classes.clear()
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
                     self.update_class_buttons()
