@@ -189,7 +189,6 @@ class Trainer(QtCore.QThread):
 
 
 class Predictor(QtCore.QThread):
-# class Predictor():
 
     predictions_made = QtCore.pyqtSignal(int, int)
     prediction_finished = QtCore.pyqtSignal(np.recarray)
@@ -694,6 +693,7 @@ class train_dialog(QtWidgets.QDialog):
     def prepare_finished(self, X_train, Y_train):
         print("Training data generated.")
         self.train_btn.setDisabled(False)
+        self.generator_running = False
         self.data_prepared = True
         self.X_train = X_train
         self.Y_train = Y_train
