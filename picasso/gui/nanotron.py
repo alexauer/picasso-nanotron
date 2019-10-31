@@ -31,7 +31,7 @@ from PyQt5.QtGui import QIcon
 
 from .. import io, lib, render, nanotron
 
-DEFAULT_MODEL_PATH = "/picasso/model/model.sav"
+DEFAULT_MODEL_PATH = "/picasso/model/default_model.sav"
 
 
 @numba.jit(nopython=True, nogil=True)
@@ -144,7 +144,6 @@ class Generator(QtCore.QThread):
 
 class Trainer(QtCore.QThread):
 
-    training_progress_made = QtCore.pyqtSignal(int, int, int, int)
     training_finished = QtCore.pyqtSignal(list, float, float, list)
 
     def __init__(self, X_train, Y_train, parameter, parent=None):
@@ -164,6 +163,7 @@ class Trainer(QtCore.QThread):
     def run(self):
         self.mlp_list = []
         hidden_layer_sizes = tuple(self.network.values())
+
         mlp = MLPClassifier(hidden_layer_sizes=hidden_layer_sizes,
                             activation=self.activation,
                             max_iter=self.iterations,
@@ -289,7 +289,7 @@ class Predictor(QtCore.QThread):
 
         while finished[0] < N:
             self.predictions_made.emit(int(current[0]), N)
-            # sleep(0.2)
+            sleep(0.1)
 
         classes = np.array(predictions)
         probas = np.array(probabilities)
@@ -409,7 +409,6 @@ class train_dialog(QtWidgets.QDialog):
         self.train_btn.setDisabled(True)
         self.train_label = QtWidgets.QLabel("")
         self.train_label.setAlignment(QtCore.Qt.AlignCenter)
-        # train_btn.setVisible(False)
         self.learning_curve_btn = QtWidgets.QPushButton("Show Learning Curve")
         self.learning_curve_btn.clicked.connect(self.show_learning_stats)
         self.learning_curve_btn.setVisible(False)
@@ -653,7 +652,7 @@ class train_dialog(QtWidgets.QDialog):
             msgBox.exec_()
         elif (self.check_set()):
             self.generator_running = True
-            # Get the largest pick radius
+
             max_key = max(self.pick_radii, key=lambda x: self.pick_radii.get(x))
             self.pick_radius = self.pick_radii[max_key]
             self.oversampling = self.oversampling_box.value()
@@ -790,7 +789,6 @@ class Window(QtWidgets.QMainWindow):
         self.nanotron_log = {}
         self.classes = []
 
-        # self.parameters_dialog = ParametersDialog(self)
         menu_bar = self.menuBar()
         self.train_dialog = train_dialog(self)
 
@@ -804,7 +802,6 @@ class Window(QtWidgets.QMainWindow):
         export_action.triggered.connect(self.export)
         file_menu.addAction(export_action)
 
-        # Training menu #TODO
         tools_menu = menu_bar.addMenu("Tools")
         load_model_action = tools_menu.addAction("Load Model")
         load_model_action.setShortcut("Ctrl+L")
@@ -816,7 +813,6 @@ class Window(QtWidgets.QMainWindow):
         self.status_bar = self.statusBar()
         self.status_bar.showMessage("Load localization file.")
         self.grid = QtWidgets.QGridLayout()
-        # self.grid.setSpacing(5)
 
         self.view = QtWidgets.QLabel("")
         minsize = 512
@@ -828,11 +824,6 @@ class Window(QtWidgets.QMainWindow):
         view_grid.addWidget(self.view, 0, 0)
 
         self.load_default_model()
-        # model_box = QtWidgets.QGroupBox("Model")
-        # modelbox_grid = QtWidgets.QVBoxLayout(model_box)
-        # self.model_load_btn = QtWidgets.QPushButton("Load Model")
-        # modelbox_grid.addWidget(self.model_load_btn)
-        # self.model_load_btn.clicked.connect(self.load_model)
 
         self.class_box = QtWidgets.QGroupBox("Export Structures")
         self.classbox_grid = QtWidgets.QVBoxLayout(self.class_box)
@@ -1009,7 +1000,7 @@ class Window(QtWidgets.QMainWindow):
         except Exception:
             print("Default model not loaded.")
             self.status_bar.showMessage("Load model.")
-            # raise ValueError("Default model not loaded.")
+
 
         try:
             base, ext = os.path.splitext(path)
