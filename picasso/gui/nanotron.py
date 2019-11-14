@@ -718,10 +718,13 @@ class View(QtWidgets.QLabel):
     def __init__(self, window):
         super().__init__()
         self.window = window
-        self.setMinimumSize(1, 1)
+        self.setMinimumSize(512, 512)
         self.setAlignment(QtCore.Qt.AlignCenter)
         self.setAcceptDrops(True)
         self._pixmap = None
+        self.locs = None
+        self.rubberband = QtWidgets.QRubberBand(QtWidgets.QRubberBand.Rectangle, self)
+        self.rubberband.setStyleSheet("selection-background-color: white")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -734,7 +737,7 @@ class View(QtWidgets.QLabel):
         path = urls[0].toLocalFile()
         ext = os.path.splitext(path)[1].lower()
         if ext == ".hdf5":
-            self.open(path)
+            self.window.open_file(path)
 
     def resizeEvent(self, event):
         if self._pixmap is not None:
@@ -750,6 +753,7 @@ class View(QtWidgets.QLabel):
         self._bgra[..., 0] = cmap[:, 2][image]
         self._bgra[..., 1] = cmap[:, 1][image]
         self._bgra[..., 2] = cmap[:, 0][image]
+        self._bgra[:,:,3].fill(255)
         qimage = QtGui.QImage(self._bgra.data, X, Y, QtGui.QImage.Format_RGB32)
         self._pixmap = QtGui.QPixmap.fromImage(qimage)
         self.set_pixmap(self._pixmap)
@@ -765,13 +769,13 @@ class View(QtWidgets.QLabel):
         )
 
     def update_image(self, *args):
-        oversampling = self.window.parameters_dialog.oversampling.value()
+        oversampling = 1
         t_min = np.min([np.min(self.locs.x), np.min(self.locs.y)])
         t_max = np.max([np.max(self.locs.x), np.max(self.locs.y)])
-        N_avg, image_avg = render.render_hist(
+        N, image = render.render_hist(
             self.locs, oversampling, t_min, t_min, t_max, t_max
         )
-        self.set_image(image_avg)
+        self.set_image(image)
 
 
 class Window(QtWidgets.QMainWindow):
@@ -783,7 +787,6 @@ class Window(QtWidgets.QMainWindow):
         self.icon_path = os.path.join(this_directory, "icons", "nanotron.ico")
         icon = QtGui.QIcon(self.icon_path)
         self.setWindowIcon(icon)
-        self.setAcceptDrops(True)
         self.predicting = False
         self.model_loaded = False
         self.nanotron_log = {}
@@ -814,7 +817,7 @@ class Window(QtWidgets.QMainWindow):
         self.status_bar.showMessage("Load localization file.")
         self.grid = QtWidgets.QGridLayout()
 
-        self.view = QtWidgets.QLabel("")
+        self.view = View(self)
         minsize = 512
         self.view.setFixedWidth(minsize)
         self.view.setFixedHeight(minsize)
@@ -916,6 +919,7 @@ class Window(QtWidgets.QMainWindow):
 
         try:
             self.locs, self.info = io.load_locs(path, qt_parent=self)
+            self.view.locs = self.locs
 
         except io.NoMetadataFileError:
             return
@@ -932,7 +936,7 @@ class Window(QtWidgets.QMainWindow):
             groups = np.unique(self.locs.group)
             groups_max = max(groups)
             self.predict_btn.setDisabled(False)
-            self.update_image()
+            self.view.update_image()
             self.status_bar.showMessage("{} picks loaded. Ready for processing."
                                         .format(str(groups_max)))
 
@@ -949,45 +953,6 @@ class Window(QtWidgets.QMainWindow):
         if ext == ".hdf5":
             print("Opening {} ..".format(path))
             self.open_file(path)
-
-    def update_image(self, *args):
-
-        oversampling = 1
-        t_min = np.min([np.min(self.locs.x), np.min(self.locs.y)])
-        t_max = np.max([np.max(self.locs.x), np.max(self.locs.y)])
-        N_avg, image = render.render_hist(
-            self.locs, oversampling, t_min, t_min, t_max, t_max
-        )
-        self.set_image(image)
-
-    def set_pixmap(self, pixmap):
-        self.view.setPixmap(
-            pixmap.scaled(
-                self.width(),
-                self.height(),
-                QtCore.Qt.KeepAspectRatio,
-                QtCore.Qt.FastTransformation,
-            )
-        )
-
-    def set_image(self, image):
-        cmap = np.uint8(np.round(255 * plt.get_cmap("hot")(np.arange(256))))
-        image /= image.max()
-        image = np.minimum(image, 1.0)
-        image = np.round(255 * image).astype("uint8")
-        Y, X = image.shape
-        self._bgra = np.zeros((Y, X, 4), dtype=np.uint8, order="C")
-        self._bgra[..., 0] = cmap[:, 2][image]
-        self._bgra[..., 1] = cmap[:, 1][image]
-        self._bgra[..., 2] = cmap[:, 0][image]
-        qimage = QtGui.QImage(self._bgra.data, X, Y, QtGui.QImage.Format_RGB32)
-        qimage = qimage.scaled(
-            self.view.width(),
-            np.round(self.view.height() * Y / X),
-            QtCore.Qt.KeepAspectRatioByExpanding,
-        )
-        self._pixmap = QtGui.QPixmap.fromImage(qimage)
-        self.set_pixmap(self._pixmap)
 
     def load_default_model(self):
 
