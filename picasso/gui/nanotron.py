@@ -14,7 +14,6 @@ import datetime
 from time import sleep
 
 import matplotlib.pyplot as plt
-import numba
 import numpy as np
 
 import threading
@@ -32,19 +31,6 @@ from PyQt5.QtGui import QIcon
 from .. import io, lib, render, nanotron
 
 DEFAULT_MODEL_PATH = "/picasso/model/default_model.sav"
-
-
-@numba.jit(nopython=True, nogil=True)
-def render_hist(x, y, oversampling, t_min, t_max):
-    n_pixel = int(np.ceil(oversampling * (t_max - t_min)))
-    in_view = (x > t_min) & (y > t_min) & (x < t_max) & (y < t_max)
-    x = x[in_view]
-    y = y[in_view]
-    x = oversampling * (x - t_min)
-    y = oversampling * (y - t_min)
-    image = np.zeros((n_pixel, n_pixel), dtype=np.float32)
-    render._fill(image, x, y)
-    return len(x), image
 
 
 class Generator(QtCore.QThread):
