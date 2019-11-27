@@ -379,11 +379,13 @@ class train_dialog(QtWidgets.QDialog):
         perceptron_grid.addWidget(QtWidgets.QLabel("Solver:"), 3, 0)
         self.solver = QtWidgets.QComboBox()
         self.solver.addItems(["adam", "lbfgs", "sgd"])
+        self.solver.setCurrentIndex(0)
         perceptron_grid.addWidget(self.solver, 3, 1)
 
         perceptron_grid.addWidget(QtWidgets.QLabel("Activation:"), 4, 0)
         self.activation_ft = QtWidgets.QComboBox()
         self.activation_ft.addItems(["relu", "identity", "logistic", "tanh"])
+        self.activation_ft.setCurrentIndex(0)
         perceptron_grid.addWidget(self.activation_ft, 4, 1)
 
         train_parameter_box = QtWidgets.QGroupBox("Training")
@@ -473,7 +475,7 @@ class train_dialog(QtWidgets.QDialog):
 
             n = QtWidgets.QSpinBox()
             n.setRange(0, 999)
-            n.setValue(100)
+            n.setValue(500)
             self.nodes.append(n)
             self.nodes_box.addWidget(n, 0, layer)
 
@@ -562,7 +564,7 @@ class train_dialog(QtWidgets.QDialog):
                              color="white" if self.cm[i, j] > thresh else "black")
             plt.autoscale()
             plt.tight_layout()
-            plt.show()
+            fig.show()
 
     def update_train_files(self):
 
@@ -630,16 +632,18 @@ class train_dialog(QtWidgets.QDialog):
         n_datasets = len(self.training_files)
 
         passed = False
-        n_ids = 0
+        names = []
 
-        for id, txt in enumerate(self.classes_name):
+        for counter, txt in enumerate(self.classes_name):
             name = txt.text().strip()
             if name:
-                self.classes[id] = name
-                n_ids += 1
+                names.append(name)
+                self.classes[counter] = name
 
-        if (n_files == n_ids) and (n_files == n_datasets):
-            passed = True
+        if (n_files == len(names)) and (n_files == n_datasets):
+
+            if len(names) == len(set(names)):
+                passed = True
 
         return passed
 
@@ -677,7 +681,7 @@ class train_dialog(QtWidgets.QDialog):
         else:
             msgBox = QtWidgets.QMessageBox(self)
             msgBox.setWindowTitle("Error")
-            msgBox.setText("No all data sets loaded or names defined.")
+            msgBox.setText("No all data sets loaded or names defined. (Duplicate names not valid)")
             msgBox.exec_()
 
     def prepare_progress(self, current_dataset, last_dataset, current_img, last_img):
