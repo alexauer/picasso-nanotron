@@ -325,6 +325,7 @@ class train_dialog(QtWidgets.QDialog):
         choose_n_files_box = QtWidgets.QGroupBox("Number of Classes")
         choose_class_grid = QtWidgets.QGridLayout(choose_n_files_box)
         self.choose_n_files = QtWidgets.QSpinBox()
+        self.choose_n_files.resize(50, 50)
         self.choose_n_files.setRange(1, 6)
         self.choose_n_files.setValue(0)
         self.choose_n_files.setKeyboardTracking(False)
@@ -341,6 +342,7 @@ class train_dialog(QtWidgets.QDialog):
         train_img_box = QtWidgets.QGroupBox("Image Parameter")
         self.train_img_grid = QtWidgets.QGridLayout(train_img_box)
         self.oversampling_box = QtWidgets.QSpinBox()
+        self.oversampling_box.resize(50, 50)
         self.oversampling_box.setRange(1, 200)
         self.oversampling_box.setValue(50)
 
@@ -363,6 +365,7 @@ class train_dialog(QtWidgets.QDialog):
 
         perceptron_grid.addWidget(QtWidgets.QLabel("Hidden Layers:"), 0, 0)
         self.n_layers = QtWidgets.QSpinBox()
+        self.n_layers.resize(50, 50)
         self.n_layers.setRange(1, 3)
         self.n_layers.setValue(1)
         self.n_layers.valueChanged.connect(self.update_nodes_box)
@@ -390,12 +393,14 @@ class train_dialog(QtWidgets.QDialog):
 
         train_parameter_grid.addWidget(QtWidgets.QLabel("Iterations:"), 0, 0)
         self.iterations = QtWidgets.QSpinBox()
+        self.iterations.resize(100, 50)
         self.iterations.setRange(0, 1e4)
         self.iterations.setValue(200)
         train_parameter_grid.addWidget(self.iterations, 0, 1)
 
         train_parameter_grid.addWidget(QtWidgets.QLabel("Learning Rate:"), 1, 0)
         self.learing_rate = QtWidgets.QDoubleSpinBox()
+        self.learing_rate.resize(200, 50)
         self.learing_rate.setRange(0.001, 10)
         self.learing_rate.setValue(0.001)
         self.learing_rate.setSingleStep(0.001)
@@ -471,6 +476,7 @@ class train_dialog(QtWidgets.QDialog):
         for layer in range(n_layers):
 
             n = QtWidgets.QSpinBox()
+            n.resize(100, 50)
             n.setRange(0, 999)
             n.setValue(500)
             self.nodes.append(n)
@@ -851,6 +857,7 @@ class Window(QtWidgets.QMainWindow):
         accuracy_grid = QtWidgets.QGridLayout(accuracy_box)
         self.filter_accuracy_btn = QtWidgets.QCheckBox("Filter Probabilities >=")
         self.export_accuracy = QtWidgets.QDoubleSpinBox()
+        self.export_accuracy.resize(50, 50)
         self.export_accuracy.setDecimals(2)
         self.export_accuracy.setRange(0, 1)
         self.export_accuracy.setValue(0.99)
