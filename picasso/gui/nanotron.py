@@ -17,6 +17,9 @@ from time import sleep
 import matplotlib.pyplot as plt
 import numpy as np
 
+from matplotlib.backends.backend_qt5agg import FigureCanvas as FigureCanvas
+from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
+
 import threading
 import multiprocessing
 import concurrent.futures
@@ -840,9 +843,13 @@ class Window(QtWidgets.QMainWindow):
         self.predict_btn.setDisabled(True)
         predict_grid.addWidget(self.predict_btn)
 
+        self.dist_btn = QtWidgets.QPushButton("Show Probabilities")
+        self.dist_btn.clicked.connect(self.show_probs)
+        self.dist_btn.setDisabled(True)
+
         accuracy_box = QtWidgets.QGroupBox("Filter export")
         accuracy_grid = QtWidgets.QGridLayout(accuracy_box)
-        self.filter_accuracy_btn = QtWidgets.QCheckBox("Probability")
+        self.filter_accuracy_btn = QtWidgets.QCheckBox("Filter Probabilities >=")
         self.export_accuracy = QtWidgets.QDoubleSpinBox()
         self.export_accuracy.setDecimals(2)
         self.export_accuracy.setRange(0, 1)
@@ -861,11 +868,12 @@ class Window(QtWidgets.QMainWindow):
 
         export_box = QtWidgets.QGroupBox("Export")
         export_grid = QtWidgets.QGridLayout(export_box)
-        export_grid.addWidget(self.export_accuracy, 0, 1, 1, 1)
-        export_grid.addWidget(self.filter_accuracy_btn, 0, 0, 1, 1)
-        export_grid.addWidget(self.export_regions_btn,1,0,1,2)
-        export_grid.addWidget(self.regroup_btn,2,0,1,2)
-        export_grid.addWidget(self.export_btn, 3, 0, 1, 2)
+        export_grid.addWidget(self.dist_btn, 0, 0, 1, 2)
+        export_grid.addWidget(self.export_accuracy, 1, 1, 1, 1)
+        export_grid.addWidget(self.filter_accuracy_btn, 1, 0, 1, 1)
+        export_grid.addWidget(self.export_regions_btn, 2, 0, 1, 2)
+        export_grid.addWidget(self.regroup_btn, 3, 0, 1, 2)
+        export_grid.addWidget(self.export_btn, 4, 0, 1, 2)
 
         self.grid.addWidget(view_box, 0, 0, -3, 1)
         self.grid.addWidget(predict_box, 0, 1, 1, 1)
@@ -882,6 +890,8 @@ class Window(QtWidgets.QMainWindow):
         if (self.predicting is False) and (self.model_loaded is True):
 
             self.predicting = True
+            self.dist_btn.setDisabled(True)
+            self.export_btn.setDisabled(True)
 
             self.oversampling = self.model_info["Oversampling"]
             self.pick_diameter = self.model_info["Pick Diameter"]
@@ -894,10 +904,36 @@ class Window(QtWidgets.QMainWindow):
             self.thread.prediction_finished.connect(self.on_finished)
             self.thread.start()
 
+    def show_probs(self):
+
+        if self.predicting is False:
+
+            if not hasattr(self.locs, "score"):
+                msgBox = QtWidgets.QMessageBox(self)
+                msgBox.setWindowTitle("Error")
+                msgBox.setText(
+                    ("No predictions. Predict first.")
+                )
+                msgBox.exec_()
+            else:
+
+                fig, ax1 = plt.subplots(1, 1, figsize=(7, 5))
+                ax1.set_title("Probability distribution")
+                ax1.hist(self.locs["score"], bins=100)
+                ax1.set_xlabel("Probability")
+                ax1.set_ylabel("Counts")
+
+                plt.autoscale()
+                plt.tight_layout()
+                fig.show()
+
+        return
+
     def on_finished(self, locs):
         self.locs = locs.copy()
         self.predicting = False
         self.export_btn.setDisabled(False)
+        self.dist_btn.setDisabled(False)
         self.status_bar.showMessage("Prediction finished.")
 
     def on_progress(self, pick, total_picks):
@@ -936,6 +972,8 @@ class Window(QtWidgets.QMainWindow):
             groups = np.unique(self.locs.group)
             groups_max = max(groups)
             self.predict_btn.setDisabled(False)
+            self.export_btn.setDisabled(True)
+            self.dist_btn.setDisabled(True)
             self.view.update_image()
             self.status_bar.showMessage("{} picks loaded. Ready for processing."
                                         .format(str(groups_max)))
