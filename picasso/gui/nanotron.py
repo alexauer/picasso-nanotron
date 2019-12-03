@@ -233,7 +233,6 @@ class Predictor(QtCore.QThread):
             with lock:
                 finished[0] += 1
 
-
     def predict_async(self, model, locs, picks, pick_radius, oversampling):
 
         n_picks = len(picks)
@@ -298,6 +297,23 @@ class Predictor(QtCore.QThread):
 
         self.prediction_finished.emit(self.locs)
 
+class GenericPlotWindow(QtWidgets.QTabWidget):
+    def __init__(self, window_title):
+        super().__init__()
+        self.setWindowTitle(window_title)
+        this_directory = os.path.dirname(os.path.realpath(__file__))
+        icon_path = os.path.join(this_directory, "icons", "nanotron.ico")
+        icon = QtGui.QIcon(icon_path)
+        self.setWindowIcon(icon)
+        self.resize(1000, 500)
+        self.figure = plt.Figure()
+        self.canvas = FigureCanvas(self.figure)
+        vbox = QtWidgets.QVBoxLayout()
+        self.setLayout(vbox)
+        vbox.addWidget(self.canvas)
+
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        vbox.addWidget(self.toolbar)
 
 class train_dialog(QtWidgets.QDialog):
     def __init__(self, window):
@@ -395,7 +411,7 @@ class train_dialog(QtWidgets.QDialog):
         self.iterations = QtWidgets.QSpinBox()
         self.iterations.resize(100, 50)
         self.iterations.setRange(0, 1e4)
-        self.iterations.setValue(200)
+        self.iterations.setValue(400)
         train_parameter_grid.addWidget(self.iterations, 0, 1)
 
         train_parameter_grid.addWidget(QtWidgets.QLabel("Learning Rate:"), 1, 0)
@@ -406,7 +422,6 @@ class train_dialog(QtWidgets.QDialog):
         self.learing_rate.setSingleStep(0.001)
         self.learing_rate.setDecimals(4)
         train_parameter_grid.addWidget(self.learing_rate, 1, 1)
-
 
         self.train_btn = QtWidgets.QPushButton("Train Model")
         self.train_btn.clicked.connect(self.train)
@@ -540,7 +555,10 @@ class train_dialog(QtWidgets.QDialog):
     def show_learning_stats(self):
         if self.mlp is not None:
 
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+            canvas = GenericPlotWindow("Learning history")
+            canvas.figure.clear()
+
+            ax1, ax2 = canvas.figure.subplots(1, 2)
             ax1.set_title("Learning Curve")
             ax1.plot(self.mlp.loss_curve_, label="Train")
             ax1.legend(loc="best")
@@ -570,7 +588,8 @@ class train_dialog(QtWidgets.QDialog):
                              color="white" if self.cm[i, j] > thresh else "black")
             plt.autoscale()
             plt.tight_layout()
-            fig.show()
+            canvas.canvas.draw()
+            canvas.show()
 
     def update_train_files(self):
 
@@ -924,17 +943,19 @@ class Window(QtWidgets.QMainWindow):
                 msgBox.exec_()
             else:
 
-                fig, ax1 = plt.subplots(1, 1, figsize=(7, 5))
-                ax1.set_title("Probability distribution")
+                canvas = GenericPlotWindow("Probabilities")
+                canvas.figure.clear()
+
+                ax1 = canvas.figure.subplots(1, 1)
                 ax1.hist(self.locs["score"], bins=100)
                 ax1.set_xlabel("Probability")
                 ax1.set_ylabel("Counts")
 
                 plt.autoscale()
                 plt.tight_layout()
-                fig.show()
+                canvas.canvas.draw()
+                canvas.show()
 
-        return
 
     def on_finished(self, locs):
         self.locs = locs.copy()
