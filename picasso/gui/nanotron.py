@@ -34,8 +34,8 @@ from PyQt5.QtGui import QIcon
 
 from .. import io, lib, render, nanotron
 
-DEFAULT_MODEL_PATH = "/picasso/model/default_model.sav"
-
+DEFAULT_MODEL_PATH = _ospath.join(os.sep, 'picasso', 'model', 'default_model.sav')
+default_model = True
 
 class Generator(QtCore.QThread):
 
@@ -671,27 +671,28 @@ class train_dialog(QtWidgets.QDialog):
             if len(names) == len(set(names)):
                 passed = True
 
-        lengths = []
-        for key, file in self.training_files.items():
-            lengths.append(len(np.unique(file["group"])))
+        if passed:
+            lengths = []
+            for key, file in self.training_files.items():
+                lengths.append(len(np.unique(file["group"])))
 
-        median_length = int(np.median(lengths))
+            median_length = int(np.median(lengths))
 
-        for key, file in self.training_files.items():
+            for key, file in self.training_files.items():
 
-            val = max(np.unique(file["group"])) / median_length
+                val = max(np.unique(file["group"])) / median_length
 
-            if val >= 1.5:
-                print("Dataset {} will be downsampled.".format(key))
-                self.training_files[key] = file[ file["group"] <= median_length]
+                if val >= 1.5:
+                    print("Dataset {} will be downsampled.".format(key))
+                    self.training_files[key] = file[ file["group"] <= median_length]
 
-                msgBox = QtWidgets.QMessageBox(self)
-                msgBox.setIcon(QtWidgets.QMessageBox.Information)
-                msgBox.setWindowTitle("Info")
-                msgBox.setText("Class {} will be downsampled".format(key))
-                msgBox.setInformativeText("Datasets are inbalanced. "
-                                          "This can cause training artifacts. ")
-                msgBox.exec_()
+                    msgBox = QtWidgets.QMessageBox(self)
+                    msgBox.setIcon(QtWidgets.QMessageBox.Information)
+                    msgBox.setWindowTitle("Info")
+                    msgBox.setText("Class {} will be downsampled".format(key))
+                    msgBox.setInformativeText("Datasets are inbalanced. "
+                                              "This can cause training artifacts. ")
+                    msgBox.exec_()
 
         return passed
 
@@ -881,11 +882,13 @@ class Window(QtWidgets.QMainWindow):
         view_grid = QtWidgets.QGridLayout(view_box)
         view_grid.addWidget(self.view, 0, 0)
 
-        self.load_default_model()
-
         self.class_box = QtWidgets.QGroupBox("Export Structures")
         self.classbox_grid = QtWidgets.QVBoxLayout(self.class_box)
-        self.update_class_buttons()
+
+        if default_model:
+            self.load_default_model()
+            self.update_class_buttons()
+
         self.classbox_grid.addStretch(1)
 
         predict_box = QtWidgets.QGroupBox("Predict")
@@ -957,6 +960,14 @@ class Window(QtWidgets.QMainWindow):
             self.thread.prediction_finished.connect(self.on_finished)
             self.thread.start()
 
+        if self.model_loaded is False:
+            msgBox = QtWidgets.QMessageBox(self)
+            msgBox.setIcon(QtWidgets.QMessageBox.Information)
+            msgBox.setWindowTitle("Information")
+            msgBox.setText("No model found")
+            msgBox.setInformativeText("Load model first and try again.")
+            msgBox.exec_()
+
     def show_probs(self):
 
         if self.predicting is False:
@@ -1027,12 +1038,15 @@ class Window(QtWidgets.QMainWindow):
         else:
             groups = np.unique(self.locs.group)
             groups_max = max(groups)
-            self.predict_btn.setDisabled(False)
             self.export_btn.setDisabled(True)
             self.dist_btn.setDisabled(True)
             self.view.update_image()
-            self.status_bar.showMessage("{} picks loaded. Ready for processing."
-                                        .format(str(groups_max)))
+            self.status_bar.showMessage("{} picks loaded.".format(str(groups_max)))
+
+        if self.model_loaded is False:
+            self.status_bar.showMessage("{} picks loaded. Load model to predict".format(str(groups_max)))
+        else:
+            self.predict_btn.setDisabled(False)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
