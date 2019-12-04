@@ -632,11 +632,12 @@ class train_dialog(QtWidgets.QDialog):
 
         if not hasattr(locs, "group"):
             msgBox = QtWidgets.QMessageBox(self)
-            msgBox.setWindowTitle("Error")
-            msgBox.setText(
+            msgBox.setIcon(QtWidgets.QMessageBox.Warning)
+            msgBox.setWindowTitle("Warning")
+            msgBox.setText("No groups found")
+            msgBox.setInformativeText(
                 ("Datafile does not contain group information."
-                 "Please load file with picked localizations.")
-            )
+                 "Please load file with picked localizations."))
             msgBox.exec_()
         else:
             self.training_files[(file)] = locs
@@ -670,14 +671,37 @@ class train_dialog(QtWidgets.QDialog):
             if len(names) == len(set(names)):
                 passed = True
 
+        lengths = []
+        for key, file in self.training_files.items():
+            lengths.append(len(np.unique(file["group"])))
+
+        median_length = int(np.median(lengths))
+
+        for key, file in self.training_files.items():
+
+            val = max(np.unique(file["group"])) / median_length
+
+            if val >= 1.5:
+                print("Dataset {} will be downsampled.".format(key))
+                self.training_files[key] = file[ file["group"] <= median_length]
+
+                msgBox = QtWidgets.QMessageBox(self)
+                msgBox.setIcon(QtWidgets.QMessageBox.Information)
+                msgBox.setWindowTitle("Info")
+                msgBox.setText("Class {} will be downsampled".format(key))
+                msgBox.setInformativeText("Datasets are inbalanced. "
+                                          "This can cause training artifacts. ")
+                msgBox.exec_()
+
         return passed
 
     def prepare_data(self):
 
         if self.generator_running:
             msgBox = QtWidgets.QMessageBox(self)
-            msgBox.setWindowTitle("Error")
-            msgBox.setText("Preparation already running.")
+            msgBox.setIcon(QtWidgets.QMessageBox.Warning)
+            msgBox.setWindowTitle("Warning")
+            msgBox.setText("Preparation already running")
             msgBox.exec_()
         elif (self.check_set()):
             self.generator_running = True
@@ -704,8 +728,11 @@ class train_dialog(QtWidgets.QDialog):
 
         else:
             msgBox = QtWidgets.QMessageBox(self)
-            msgBox.setWindowTitle("Error")
-            msgBox.setText("No all data sets loaded or names defined. (Duplicate names not valid)")
+            msgBox.setIcon(QtWidgets.QMessageBox.Warning)
+            msgBox.setWindowTitle("Warning")
+            msgBox.setText("No all data sets loaded or names defined")
+            msgBox.setInformativeText("Check if all names are set up correct."
+                                      " Duplicate names are not valid.")
             msgBox.exec_()
 
     def prepare_progress(self, current_dataset, last_dataset, current_img, last_img):
@@ -936,10 +963,10 @@ class Window(QtWidgets.QMainWindow):
 
             if not hasattr(self.locs, "score"):
                 msgBox = QtWidgets.QMessageBox(self)
-                msgBox.setWindowTitle("Error")
-                msgBox.setText(
-                    ("No predictions. Predict first.")
-                )
+                msgBox.setIcon(QtWidgets.QMessageBox.Information)
+                msgBox.setWindowTitle("Information")
+                msgBox.setText("No predictions found")
+                msgBox.setInformativeText("Predict first and try again.")
                 msgBox.exec_()
             else:
 
@@ -990,11 +1017,12 @@ class Window(QtWidgets.QMainWindow):
 
         if not hasattr(self.locs, "group"):
             msgBox = QtWidgets.QMessageBox(self)
-            msgBox.setWindowTitle("Error")
-            msgBox.setText(
+            msgBox.setIcon(QtWidgets.QMessageBox.Warning)
+            msgBox.setWindowTitle("Warning")
+            msgBox.setText("No groups found")
+            msgBox.setInformativeText(
                 ("Datafile does not contain group information."
-                    " Please load file with picked localizations.")
-            )
+                 " Please load file with picked localizations."))
             msgBox.exec_()
         else:
             groups = np.unique(self.locs.group)
@@ -1088,8 +1116,10 @@ class Window(QtWidgets.QMainWindow):
 
         if not hasattr(self.locs, "prediction"):
             msgBox = QtWidgets.QMessageBox(self)
-            msgBox.setWindowTitle("Error")
-            msgBox.setText("No predictions. Predict first.")
+            msgBox.setIcon(QtWidgets.QMessageBox.Information)
+            msgBox.setWindowTitle("Information")
+            ("No predictions found")
+            msgBox.setInformativeText("Predict first and try again.")
             msgBox.exec_()
             return
 
@@ -1130,7 +1160,7 @@ class Window(QtWidgets.QMainWindow):
             print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
             self.nanotron_log["Probability"] = accuracy
 
-        count = 0
+        count = 1
 
         for prediction, name in export_classes.items():
 
