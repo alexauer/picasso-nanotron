@@ -4,7 +4,7 @@
 
     Machine learning library for segmentation of picks
 
-    :author: Alexander Auer 2019
+    :author: Alexander Auer, Maximilian T Strauss 2019
     :copyright: Copyright (c) 2019 Jungmann Lab, MPI of Biochemistry
 """
 
@@ -111,13 +111,6 @@ def prepare_data(locs, label, pick_radius,
         labels.append(label)
 
     return data, label
-
-# def combine_data_to_4d(x_1, y_1, x_2, y_2 ):
-#
-#     x = x_1 + x_2
-#     y = y_1 + y_2
-#
-#     return np.asarray(x), np.asarray(y)
 
 
 def predict_structure(mlp, locs, pick, pick_radius, oversampling):

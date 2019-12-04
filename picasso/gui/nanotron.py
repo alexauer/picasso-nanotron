@@ -2,7 +2,7 @@
     gui/nanotron
     ~~~~~~~~~~~~~~~~~~~~
     Graphical user interface for classification using deep learning
-    :author: Alexander Auer, 2019
+    :author: Alexander Auer, Maximilian T Strauss 2019
     :copyright: Copyright (c) 2016 Jungmann Lab, MPI of Biochemistry
 """
 
@@ -1111,10 +1111,17 @@ class Window(QtWidgets.QMainWindow):
             if export_map[key] is True:
                 export_classes[key] = item
 
+        progress = lib.ProgressDialog(
+            "Exporting datasets...", 0, len(export_classes), self
+        )
+        progress.set_value(0)
+        progress.show()
+
         all_picks = len(np.unique(self.locs["group"]))
         accuracy = self.export_accuracy.value()
 
         export_locs = self.locs.copy()
+
 
         if self.filter_accuracy_btn.isChecked():
             print("Probability filter set to {:4}%".format(accuracy*100))
@@ -1123,7 +1130,12 @@ class Window(QtWidgets.QMainWindow):
             print("Dropped {} from {} picks.".format(dropped_picks, all_picks))
             self.nanotron_log["Probability"] = accuracy
 
+        count = 0
+
         for prediction, name in export_classes.items():
+
+            count += 1
+            progress.set_value(count)
 
             filtered_locs = export_locs[export_locs["prediction"] == prediction]
             n_groups = np.unique(filtered_locs["group"])
