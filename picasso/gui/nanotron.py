@@ -2,7 +2,7 @@
     gui/nanotron
     ~~~~~~~~~~~~~~~~~~~~
     Graphical user interface for classification using deep learning
-    :author: Alexander Auer, Maximilian T Strauss 2019
+    :author: Alexander Auer, Maximilian Strauss 2019
     :copyright: Copyright (c) 2016 Jungmann Lab, MPI of Biochemistry
 """
 
@@ -692,6 +692,18 @@ class train_dialog(QtWidgets.QDialog):
                     msgBox.setText("Class {} will be downsampled".format(key))
                     msgBox.setInformativeText("Datasets are inbalanced. "
                                               "This can cause training artifacts. ")
+                    msgBox.exec_()
+
+                if val <= 0.5:
+                    print("Dataset {} not large enough.".format(key))
+
+                    msgBox = QtWidgets.QMessageBox(self)
+                    msgBox.setIcon(QtWidgets.QMessageBox.Information)
+                    msgBox.setWindowTitle("Info")
+                    msgBox.setText("Class {} is to small. Not enough picks".format(key))
+                    msgBox.setInformativeText("Datasets are inbalanced. "
+                                              "This can cause training artifacts. "
+                                              "Try to gather more data for class {}.".format(key))
                     msgBox.exec_()
 
         return passed

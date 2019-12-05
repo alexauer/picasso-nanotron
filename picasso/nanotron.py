@@ -4,7 +4,7 @@
 
     Machine learning library for segmentation of picks
 
-    :author: Alexander Auer, Maximilian T Strauss 2019
+    :author: Alexander Auer, Maximilian Strauss 2019
     :copyright: Copyright (c) 2019 Jungmann Lab, MPI of Biochemistry
 """
 
