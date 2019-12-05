@@ -997,7 +997,11 @@ class Window(QtWidgets.QMainWindow):
                 canvas.figure.clear()
 
                 ax1 = canvas.figure.subplots(1, 1)
-                ax1.hist(self.locs["score"], bins=100)
+                ax1.hist(self.locs["score"],
+                         bins=100,
+                         range=(0,1.0),
+                         align="mid",
+                         rwidth = 1)
                 ax1.set_xlabel("Probability")
                 ax1.set_ylabel("Counts")
 
