@@ -2,7 +2,7 @@
     picasso.nanotron
     ~~~~~~~~~~
 
-    Machine learning library for segmentation of picks
+    Machine learning library for classification of picks
 
     :author: Alexander Auer, Maximilian Strauss 2019
     :copyright: Copyright (c) 2019 Jungmann Lab, MPI of Biochemistry

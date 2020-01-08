@@ -857,6 +857,7 @@ class Window(QtWidgets.QMainWindow):
         self.setWindowIcon(icon)
         self.predicting = False
         self.model_loaded = False
+        self.locs_loaded = False
         self.nanotron_log = {}
         self.classes = []
 
@@ -1038,7 +1039,6 @@ class Window(QtWidgets.QMainWindow):
         try:
             self.locs, self.info = io.load_locs(path, qt_parent=self)
             self.view.locs = self.locs
-
         except io.NoMetadataFileError:
             return
 
@@ -1055,6 +1055,7 @@ class Window(QtWidgets.QMainWindow):
             groups = np.unique(self.locs.group)
             groups_max = max(groups)
             self.export_btn.setDisabled(True)
+            self.locs_loaded = True
             self.dist_btn.setDisabled(True)
             self.view.update_image()
             self.status_bar.showMessage("{} picks loaded.".format(str(groups_max)))
@@ -1090,7 +1091,6 @@ class Window(QtWidgets.QMainWindow):
             print("Default model not loaded.")
             self.status_bar.showMessage("Load model.")
 
-
         try:
             base, ext = os.path.splitext(path)
             with open(base + ".yaml", "r") as f:
@@ -1121,6 +1121,10 @@ class Window(QtWidgets.QMainWindow):
                     self.classes = self.model_info["Classes"]
                     self.model_loaded = True
                     self.update_class_buttons()
+
+                if self.locs_loaded is True:
+                    self.predict_btn.setDisabled(False)
+
             except io.NoMetadataFileError:
                 return
 
@@ -1232,6 +1236,7 @@ class Window(QtWidgets.QMainWindow):
                 with open(pick_out_path, "w") as f:
                     yaml.dump(pick_regions, f)
 
+        progress.close()
         print("Export of all predicted datasets finished.")
         self.status_bar.showMessage("{} files exported.".format(len(export_classes.items())))
 
