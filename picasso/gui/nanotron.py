@@ -1198,8 +1198,8 @@ class Window(QtWidgets.QMainWindow):
 
         for prediction, name in export_classes.items():
 
-            count += 1
             progress.set_value(count)
+            count += 1
 
             filtered_locs = export_locs[export_locs["prediction"] == prediction]
             n_groups = np.unique(filtered_locs["group"])
