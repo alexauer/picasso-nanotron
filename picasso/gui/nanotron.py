@@ -630,19 +630,19 @@ class train_dialog(QtWidgets.QDialog):
             except io.NoMetadataFileError:
                 return
 
-        if not hasattr(locs, "group"):
-            msgBox = QtWidgets.QMessageBox(self)
-            msgBox.setIcon(QtWidgets.QMessageBox.Warning)
-            msgBox.setWindowTitle("Warning")
-            msgBox.setText("No groups found")
-            msgBox.setInformativeText(
-                ("Datafile does not contain group information."
-                 "Please load file with picked localizations."))
-            msgBox.exec_()
-        else:
-            self.training_files[(file)] = locs
-            self.f_btns[file].setText("Loaded")
-            self.f_btns[file].setEnabled(False)
+            if not hasattr(locs, "group"):
+                msgBox = QtWidgets.QMessageBox(self)
+                msgBox.setIcon(QtWidgets.QMessageBox.Warning)
+                msgBox.setWindowTitle("Warning")
+                msgBox.setText("No groups found")
+                msgBox.setInformativeText(
+                    ("Datafile does not contain group information."
+                     "Please load file with picked localizations."))
+                msgBox.exec_()
+            else:
+                self.training_files[(file)] = locs
+                self.f_btns[file].setText("Loaded")
+                self.f_btns[file].setEnabled(False)
 
     def parse_pick_radius(self, info):
 
