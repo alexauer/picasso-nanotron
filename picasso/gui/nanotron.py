@@ -1090,6 +1090,7 @@ class Window(QtWidgets.QMainWindow):
         except Exception:
             print("Default model not loaded.")
             self.status_bar.showMessage("Load model.")
+            return
 
         try:
             base, ext = os.path.splitext(path)
